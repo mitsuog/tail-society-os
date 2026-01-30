@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "save": "git add . && git commit -m \"Avance guardado desde script\" && git push"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
