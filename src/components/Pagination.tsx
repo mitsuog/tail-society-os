@@ -1,3 +1,5 @@
+//tail-society-os/src/components/Pagination.tsx
+
 'use client';
 
 import { usePathname, useSearchParams } from 'next/navigation';

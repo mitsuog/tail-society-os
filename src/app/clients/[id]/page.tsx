@@ -1,14 +1,16 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import { ArrowLeft, Calendar, FileText, Phone, MapPin, Mail, Clock, ShieldAlert } from 'lucide-react';
-// Fíjate que ahora usamos @/components... es más limpio y seguro
+import { 
+  ArrowLeft, FileText, Phone, MapPin, Mail, Clock, ShieldAlert, Plus, 
+  Filter, XCircle, Cake, Weight, Cat, Dog, Calendar, Search, History
+} from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
+import { Card, CardContent } from "@/components/ui/card";
+import EditClientDialog from '@/components/EditClientDialog';
+import { cn } from '@/lib/utils';
 
-// Interfaces para TypeScript
+// --- INTERFACES ---
 interface Pet {
   id: string;
   name: string;
@@ -17,6 +19,7 @@ interface Pet {
   gender: string;
   allergies: string | null;
   birth_date: string | null;
+  weight?: string | null;
 }
 
 interface Appointment {
@@ -25,192 +28,237 @@ interface Appointment {
   notes: string | null;
   price_charged: number | null;
   secondary_services_text: string | null;
-  services_catalog: { name: string } | null;
-  pets: { name: string } | null;
+  pet_id: string;
+  status: string;
 }
 
-export default async function ClientDetail({ params }: { params: Promise<{ id: string }> }) {
+// --- HELPER EDAD ---
+function getAge(dateString: string | null) {
+  if (!dateString) return "";
+  const today = new Date();
+  const birthDate = new Date(dateString);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+  return age === 0 ? "Bebe" : `${age} años`;
+}
+
+export default async function ClientDetail({ 
+  params, 
+  searchParams 
+}: { 
+  params: Promise<{ id: string }>, 
+  searchParams: Promise<{ pet_id?: string }> 
+}) {
   const { id } = await params;
+  const { pet_id } = await searchParams;
   const supabase = await createClient();
 
-  // 1. Obtener Cliente
+  // CARGA DE DATOS
   const { data: client } = await supabase.from('clients').select('*').eq('id', id).single();
-  
-  // 2. Obtener Mascotas
-  const { data: rawPets } = await supabase.from('pets').select('*').eq('client_id', id);
-  const pets = rawPets as unknown as Pet[] | null;
+  if (!client) return <div className="p-4 text-center text-sm">Cliente no encontrado</div>;
 
-  // 3. Obtener Bitácora (Historial)
-  let appointments: Appointment[] = [];
+  const { data: rawPets } = await supabase.from('pets').select('*').eq('client_id', id);
+  const pets = rawPets as Pet[] | null;
+
+  // CARGA DE CITAS
+  let allAppointments: Appointment[] = [];
   const petIds = pets?.map(p => p.id) || [];
   
   if (petIds.length > 0) {
     const { data: appts } = await supabase
       .from('appointments')
-      .select(`
-        *,
-        services_catalog ( name ),
-        pets ( name )
-      `)
+      .select('*')
       .in('pet_id', petIds)
       .order('date', { ascending: false });
     
-    if (appts) appointments = appts as unknown as Appointment[];
+    if (appts) allAppointments = appts as Appointment[];
   }
 
-  if (!client) return <div className="p-10 text-center">Cliente no encontrado</div>;
+  // FILTRADO
+  let displayedAppointments = allAppointments;
+  let activePetName = null;
+
+  if (pet_id) {
+    displayedAppointments = allAppointments.filter(a => a.pet_id === pet_id);
+    activePetName = pets?.find(p => p.id === pet_id)?.name;
+  }
+
+  const getPetName = (pId: string) => pets?.find(p => p.id === pId)?.name || 'Mascota';
+
+  // Antigüedad
+  let clientSinceDate = new Date(client.created_at);
+  if (allAppointments.length > 0) {
+    const oldestDate = new Date(allAppointments[allAppointments.length - 1].date);
+    if (oldestDate < clientSinceDate) clientSinceDate = oldestDate;
+  }
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* HEADER SIMPLE */}
-      <div className="flex items-center gap-4 mb-2">
-        <Link href="/">
-          <Button variant="outline" size="icon" className="h-9 w-9">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">{client.full_name}</h1>
-          <p className="text-sm text-slate-500 flex items-center gap-2">
-            <Phone size={12}/> {client.phone}
-          </p>
-        </div>
-      </div>
-
-      {/* SISTEMA DE PESTAÑAS */}
-      <Tabs defaultValue="bitacora" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
-          <TabsTrigger value="bitacora">Bitácora / Historial</TabsTrigger>
-          <TabsTrigger value="perfil">Perfil y Mascotas</TabsTrigger>
-        </TabsList>
-
-        {/* --- PESTAÑA 1: BITÁCORA (El corazón del CRM) --- */}
-        <TabsContent value="bitacora" className="mt-6 space-y-6">
-          <div className="flex justify-between items-center">
-             <h2 className="text-lg font-semibold text-slate-800">Historial de Servicios</h2>
-             <Badge variant="outline" className="text-slate-500">{appointments.length} Citas registradas</Badge>
-          </div>
-
-          <div className="space-y-4">
-            {appointments.map((appt) => (
-              <Card key={appt.id} className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
-                <CardContent className="p-5">
-                  <div className="flex flex-col md:flex-row justify-between gap-4">
-                    
-                    {/* Columna Izquierda: Qué y Cuándo */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-lg text-slate-900">
-                          {appt.services_catalog?.name || "Servicio General"}
-                        </span>
-                        <Badge variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-100">
-                          {appt.pets?.name}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <Calendar size={14} />
-                        <span className="capitalize">
-                          {new Date(appt.date).toLocaleDateString('es-MX', { 
-                            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-                          })}
-                        </span>
-                        {appt.price_charged && (
-                          <>
-                           <span>•</span>
-                           <span className="font-medium text-green-700">${appt.price_charged}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Columna Derecha: Notas (Lo importante) */}
-                    <div className="flex-1 md:max-w-lg bg-yellow-50/50 p-3 rounded-md border border-yellow-100">
-                      <div className="flex gap-2">
-                        <FileText size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-slate-700 leading-relaxed">
-                          {appt.notes || "Sin notas registradas."}
-                        </p>
-                      </div>
-                      {appt.secondary_services_text && (
-                        <div className="mt-2 pt-2 border-t border-yellow-200/50 text-xs text-slate-500">
-                          <span className="font-semibold">Extras:</span> {appt.secondary_services_text}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-
-            {appointments.length === 0 && (
-              <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-lg">
-                <Clock className="mx-auto h-10 w-10 text-slate-300 mb-2" />
-                <p className="text-slate-500">No hay historial disponible para este cliente.</p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* --- PESTAÑA 2: PERFIL (Datos estáticos) --- */}
-        <TabsContent value="perfil" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Tarjeta Cliente */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Datos del Dueño</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
-                    {client.full_name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-medium text-slate-900">{client.full_name}</p>
-                    <p className="text-xs text-slate-500">ID: {client.id.split('-')[0]}</p>
-                  </div>
-                </div>
-                <Separator />
-                <div className="space-y-3 text-sm">
-                  <div className="flex gap-3 text-slate-600">
-                    <Phone size={16} className="text-slate-400"/> {client.phone}
-                  </div>
-                  <div className="flex gap-3 text-slate-600">
-                    <Mail size={16} className="text-slate-400"/> {client.email || "No registrado"}
-                  </div>
-                  <div className="flex gap-3 text-slate-600">
-                    <MapPin size={16} className="text-slate-400"/> {client.address || "Sin dirección"}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Tarjetas Mascotas */}
-            <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {pets?.map(pet => (
-                <Card key={pet.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <CardTitle>{pet.name}</CardTitle>
-                      <Badge>{pet.species || "Mascota"}</Badge>
-                    </div>
-                    <CardDescription>{pet.breed} • {pet.gender}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {pet.allergies && (
-                      <div className="bg-red-50 text-red-700 text-xs p-2 rounded flex items-start gap-2">
-                        <ShieldAlert size={14} className="mt-0.5"/>
-                        {pet.allergies}
-                      </div>
-                    )}
-                    {!pet.allergies && <p className="text-xs text-slate-400 italic">Sin alergias registradas</p>}
-                  </CardContent>
-                </Card>
-              ))}
+    <div className="max-w-7xl mx-auto p-4 space-y-4 animate-in fade-in duration-300">
+      
+      {/* HEADER COMPACTO */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-3">
+          <Link href="/">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100 rounded-full">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <div className="flex items-center gap-3">
+               <h1 className="text-xl font-bold text-slate-900 leading-none">{client.full_name}</h1>
+               <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-slate-500 bg-slate-100">
+                  Desde {clientSinceDate.getFullYear()}
+               </Badge>
+            </div>
+            <div className="flex items-center gap-3 text-slate-500 text-xs mt-1">
+              <span className="flex items-center gap-1"><Phone size={12}/> {client.phone}</span>
+              <span className="text-slate-300">|</span>
+              <span className="flex items-center gap-1"><Mail size={12}/> {client.email || "Sin email"}</span>
             </div>
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+        <EditClientDialog client={client} />
+      </div>
+
+      {/* GRID PRINCIPAL (Compacto) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        
+        {/* === SIDEBAR (Perfil y Filtros) - 3 Columnas === */}
+        <div className="lg:col-span-3 space-y-4">
+          
+          {/* NOTAS Y DIRECCIÓN (Si existen) */}
+          {(client.address || client.notes) && (
+            <div className="bg-white rounded-lg border border-slate-200 p-3 text-xs space-y-2 shadow-sm">
+              {client.address && (
+                 <div className="flex gap-2 text-slate-600">
+                   <MapPin size={14} className="shrink-0 text-slate-400"/> {client.address}
+                 </div>
+              )}
+              {client.notes && (
+                 <div className="bg-amber-50 text-amber-900 p-2 rounded border border-amber-100">
+                   <strong>Nota:</strong> {client.notes}
+                 </div>
+              )}
+            </div>
+          )}
+
+          {/* LISTA DE MASCOTAS (Compacta) */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center px-1">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mascotas ({pets?.length})</h3>
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              {pets?.map(pet => {
+                const isActive = pet_id === pet.id;
+                return (
+                  <Link key={pet.id} href={isActive ? `/clients/${client.id}` : `/clients/${client.id}?pet_id=${pet.id}`}>
+                    <div className={cn(
+                      "flex items-center gap-3 p-2.5 rounded-lg border transition-all cursor-pointer relative overflow-hidden group",
+                      isActive 
+                        ? "bg-blue-50 border-blue-500 shadow-sm" 
+                        : "bg-white border-slate-200 hover:border-blue-300 hover:shadow-sm"
+                    )}>
+                      {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>}
+                      
+                      <div className={cn("h-9 w-9 rounded-md flex items-center justify-center text-xs shrink-0", isActive ? "bg-white text-blue-600" : "bg-slate-100 text-slate-500")}>
+                        {pet.species?.toLowerCase() === 'gato' ? <Cat size={18}/> : <Dog size={18}/>}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex justify-between items-center">
+                          <p className={cn("text-sm font-bold truncate leading-none", isActive ? "text-blue-900" : "text-slate-700")}>{pet.name}</p>
+                          {pet.allergies && <ShieldAlert size={12} className="text-red-500 shrink-0" />}
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                           {pet.breed} • {pet.gender === 'Macho' ? 'M' : 'H'} {getAge(pet.birth_date) && `• ${getAge(pet.birth_date)}`}
+                        </p>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+              
+              <button className="flex items-center justify-center gap-2 p-2 rounded-lg border border-dashed border-slate-300 text-xs text-slate-500 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-300 transition-colors">
+                 <Plus size={14} /> Registrar Mascota
+              </button>
+            </div>
+          </div>
+        </div>
+
+
+        {/* === CONTENIDO PRINCIPAL (Historial) - 9 Columnas === */}
+        <div className="lg:col-span-9">
+          <Card className="shadow-sm border-slate-200 h-full min-h-[500px] flex flex-col">
+             
+             {/* Header de Tabla */}
+             <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-lg">
+                <div className="flex items-center gap-2">
+                   <History size={16} className="text-slate-400"/>
+                   <span className="text-sm font-bold text-slate-700">Historial de Servicios</span>
+                </div>
+                
+                {pet_id && activePetName ? (
+                   <div className="flex items-center gap-2 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                      <Filter size={10} /> {activePetName}
+                      <Link href={`/clients/${client.id}`}><XCircle size={12} className="ml-1 cursor-pointer hover:text-blue-600"/></Link>
+                   </div>
+                ) : (
+                   <span className="text-xs text-slate-400">Todo el historial</span>
+                )}
+             </div>
+
+             {/* Lista Lineal (Estilo Tabla Compacta) */}
+             <div className="flex-1 overflow-auto p-0">
+               {displayedAppointments.length > 0 ? (
+                 <div className="divide-y divide-slate-100">
+                    {displayedAppointments.map((appt) => (
+                      <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 hover:bg-slate-50 transition-colors group">
+                        
+                        {/* Fecha y Mascota */}
+                        <div className="sm:w-[140px] shrink-0">
+                           <div className="flex items-center gap-2 mb-0.5">
+                              <Badge variant="outline" className="text-[10px] h-4 px-1 rounded-sm border-slate-300 text-slate-500 font-normal">
+                                {getPetName(appt.pet_id)}
+                              </Badge>
+                           </div>
+                           <p className="text-sm font-bold text-slate-700">
+                             {new Date(appt.date).toLocaleDateString('es-MX', {day: 'numeric', month: 'short', year: '2-digit'})}
+                           </p>
+                           <p className="text-[10px] text-slate-400">
+                             {new Date(appt.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                           </p>
+                        </div>
+
+                        {/* Descripción (Expandible) */}
+                        <div className="flex-1 min-w-0">
+                           <p className="text-xs sm:text-sm text-slate-700 font-medium truncate group-hover:whitespace-normal group-hover:overflow-visible transition-all">
+                             {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
+                           </p>
+                           {appt.secondary_services_text && (
+                             <p className="text-[10px] text-slate-400 truncate mt-0.5">{appt.secondary_services_text}</p>
+                           )}
+                        </div>
+
+                        {/* Precio */}
+                        <div className="text-right sm:w-[80px] shrink-0">
+                           <span className="text-sm font-bold text-green-700">${appt.price_charged || 0}</span>
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+               ) : (
+                 <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                    <FileText size={32} className="opacity-20 mb-2"/>
+                    <p className="text-sm">Sin registros</p>
+                 </div>
+               )}
+             </div>
+          </Card>
+        </div>
+
+      </div>
     </div>
   );
 }

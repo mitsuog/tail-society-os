@@ -1,3 +1,5 @@
+//tail-society-os/src/components/Search.tsx
+
 'use client'; // Esto se ejecuta en el navegador
 
 import { Search as SearchIcon } from 'lucide-react';

@@ -1,3 +1,5 @@
+//tail-society-os/src/app/nuevo/page.tsx
+
 import { createClient } from '../../utils/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';

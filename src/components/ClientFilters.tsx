@@ -1,3 +1,5 @@
+//tail-society-os/src/components/ClientFilters.tsx
+
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
