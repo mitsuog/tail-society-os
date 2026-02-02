@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner"; // Asegúrate que la ruta sea correcta
 import DashboardShell from "@/components/DashboardShell"; 
 
 const inter = Inter({ subsets: ["latin"] });
@@ -18,7 +18,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={`${inter.className} bg-slate-50`}>
+      {/* Agregamos 'suppressHydrationWarning' aquí. 
+         Esto silencia el error causado por extensiones del navegador 
+         que modifican el body (como ColorZilla, Grammarly, etc).
+      */}
+      <body 
+        className={`${inter.className} bg-slate-50`} 
+        suppressHydrationWarning={true}
+      >
         {/* El Shell maneja todo el layout */}
         <DashboardShell>
           {children}

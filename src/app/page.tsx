@@ -4,10 +4,11 @@ import Search from '@/components/Search';
 import ClientFilters from '@/components/ClientFilters';
 import Pagination from '@/components/Pagination';
 import ClientRow from '@/components/ClientRow';
+import DashboardNewClientBtn from '@/components/DashboardNewClientBtn';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableHead, TableHeader, TableRow, TableCell } from "@/components/ui/table";
-import { Plus, SearchX, TabletSmartphone, Users, Dog, CalendarPlus, CalendarDays } from 'lucide-react';
+import { SearchX, TabletSmartphone, Users, Dog, CalendarPlus, CalendarDays } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const supabase = await createClient();
 
-  // --- 1. CARGA DE KPIs ---
+  // --- 1. CARGA DE KPIs (Con corrección de Estatus) ---
   const now = new Date();
   const sevenDaysAgo = new Date(now); 
   sevenDaysAgo.setDate(now.getDate() - 7);
@@ -56,9 +57,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   fourteenDaysAgo.setDate(now.getDate() - 14);
 
   const [clientsTotal, petsTotal, newClientsWeek, newClientsLastWeek] = await Promise.all([
+    // 1. Total Clientes (Cartera Histórica)
     supabase.from('clients').select('*', { count: 'exact', head: true }),
-    supabase.from('pets').select('*', { count: 'exact', head: true }),
+
+    // 2. Mascotas Activas (Solo cuenta mascotas de clientes ACTIVOS)
+    supabase
+      .from('pets')
+      .select('clients!inner(status)', { count: 'exact', head: true })
+      .neq('clients.status', 'inactive'), 
+
+    // 3. Nuevos Clientes (Semana actual)
     supabase.from('clients').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo.toISOString()),
+    
+    // 4. Nuevos Clientes (Semana anterior)
     supabase.from('clients').select('*', { count: 'exact', head: true }).gte('created_at', fourteenDaysAgo.toISOString()).lt('created_at', sevenDaysAgo.toISOString())
   ]);
 
@@ -68,7 +79,24 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const trendLabel = diff >= 0 ? `+${diff} vs. semana anterior` : `${diff} vs. semana anterior`;
   const trendStatus = diff > 0 ? 'positive' : diff < 0 ? 'negative' : 'neutral';
 
-  // --- 2. CONSULTA DE LISTADO ---
+  // --- 2. LÓGICA DE BÚSQUEDA AVANZADA (NOMBRE, TELÉFONO O MASCOTA) ---
+  let petOwnerIds: string[] = [];
+  
+  if (queryText) {
+    // Buscar mascotas que coincidan con el texto
+    const { data: petsFound } = await supabase
+      .from('pets')
+      .select('client_id')
+      .ilike('name', `%${queryText}%`)
+      .limit(50);
+
+    if (petsFound && petsFound.length > 0) {
+      // Extraer IDs únicos de los dueños
+      petOwnerIds = Array.from(new Set(petsFound.map(p => p.client_id)));
+    }
+  }
+
+  // --- 3. CONSULTA PRINCIPAL ---
   let selectString = `
     *,
     pets (
@@ -97,8 +125,23 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     .from('clients')
     .select(selectString, { count: 'exact' });
 
+  // FILTROS
   if (speciesFilter) query = query.ilike('pets.species', speciesFilter);
-  if (queryText) query = query.or(`full_name.ilike.%${queryText}%,phone.ilike.%${queryText}%`);
+  
+  if (queryText) {
+    // Construimos la condición OR:
+    // 1. Coincide nombre cliente
+    // 2. Coincide teléfono
+    let orFilter = `full_name.ilike.%${queryText}%,phone.ilike.%${queryText}%`;
+    
+    // 3. O BIEN, el ID del cliente es uno de los dueños de las mascotas encontradas
+    if (petOwnerIds.length > 0) {
+       // Agregamos los IDs al filtro OR usando la sintaxis `id.in.(...)`
+       orFilter += `,id.in.(${petOwnerIds.join(',')})`;
+    }
+    
+    query = query.or(orFilter);
+  }
 
   if (sort === 'oldest') query = query.order('created_at', { ascending: true });
   else query = query.order('created_at', { ascending: false });
@@ -138,12 +181,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </Button>
           </Link>
 
-          {/* BOTÓN NUEVO CLIENTE (Ruta Corregida) */}
-          <Link href="/clients/new">
-            <Button variant="outline" className="gap-2 border-slate-300 w-full md:w-auto text-slate-600 hover:text-blue-600 hover:border-blue-300">
-              <Plus size={16}/> Nuevo Cliente
-            </Button>
-          </Link>
+          {/* BOTÓN NUEVO CLIENTE (MODAL INTEGRADO) */}
+          <div className="w-full md:w-auto">
+             <DashboardNewClientBtn />
+          </div>
 
           {/* BOTÓN NUEVA CITA (Acción Principal) */}
           <Link href="/appointments/new">
@@ -157,17 +198,17 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       {/* METRICAS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard title="Cartera de Clientes" value={clientsTotal.count || 0} icon={Users} description="Dueños registrados" colorClass="bg-blue-500"/>
-        <MetricCard title="Mascotas Activas" value={petsTotal.count || 0} icon={Dog} description="Pacientes en sistema" colorClass="bg-orange-500"/>
+        <MetricCard title="Mascotas Activas" value={petsTotal.count || 0} icon={Dog} description="Mascotas Activas en Base de datos" colorClass="bg-orange-500"/>
         <MetricCard title="Nuevos (7 Días)" value={currentWeekCount} icon={CalendarDays} description={trendLabel} trend={trendStatus} colorClass={diff >= 0 ? "bg-green-500" : "bg-slate-500"}/>
       </div>
 
       {/* LISTA DE CLIENTES */}
       <Card className="border border-slate-200 shadow-sm overflow-hidden">
         <CardHeader className="bg-white border-b border-slate-100 py-5">
-           <div className="flex flex-col xl:flex-row gap-4 justify-between xl:items-center">
-              <div className="flex-1 max-w-md"><Search placeholder="Buscar por nombre o teléfono..." /></div>
+            <div className="flex flex-col xl:flex-row gap-4 justify-between xl:items-center">
+              <div className="flex-1 max-w-md"><Search placeholder="Buscar por cliente, mascota o teléfono..." /></div>
               <div className="flex-shrink-0"><ClientFilters /></div>
-           </div>
+            </div>
         </CardHeader>
         <div className="relative w-full overflow-auto">
           <Table>
@@ -200,8 +241,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
         {totalCount > 0 && (
           <div className="border-t border-slate-100 bg-slate-50/30 p-4 flex justify-between items-center">
-             <p className="text-xs text-slate-500">Mostrando {clients.length} de {totalCount} resultados</p>
-             <Pagination totalPages={totalPages} />
+              <p className="text-xs text-slate-500">Mostrando {clients.length} de {totalCount} resultados</p>
+              <Pagination totalPages={totalPages} />
           </div>
         )}
       </Card>
