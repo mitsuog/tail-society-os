@@ -2,462 +2,791 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { useRouter } from 'next/navigation';
 import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger 
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { 
-  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { 
   Loader2, CalendarPlus, Search, Check, Clock, User, Phone, Dog, 
-  AlertTriangle, X, Plus, Scissors, Droplets, Sparkles, Box 
+  AlertTriangle, X, Scissors, Droplets, Sparkles, Box, ChevronsUpDown, Ruler,
+  ArrowRight, ArrowLeft, Plus, Trash2
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
-import { addMinutes, format, setMinutes } from 'date-fns';
+import { addMinutes, format } from 'date-fns';
 
-// --- Interfaces ---
-interface AppointmentConfig {
-  serviceIds: string[];
-  employeeId: string;
+// --- INTERFACES ---
+interface Service {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  category: string;
+  base_price: number;
+  active: boolean;
 }
 
-// --- UTILS ---
-const generateTimeSlots = (startHour = 8, endHour = 20) => {
-    const slots = [];
-    for (let h = startHour; h < endHour; h++) {
-        const hourStr = h.toString().padStart(2, '0');
-        slots.push(`${hourStr}:00`, `${hourStr}:15`, `${hourStr}:30`, `${hourStr}:45`);
+interface Employee {
+  id: string;
+  first_name: string;
+  last_name: string;
+  color: string;
+}
+
+interface Pet {
+  id: string;
+  name: string;
+  breed: string;
+  size: string;
+}
+
+interface Client {
+  id: string;
+  full_name: string;
+  phone: string;
+  pet_names?: string[]; 
+}
+
+// Estructura para manejar múltiples servicios por mascota
+interface PetSelection {
+    mainServiceId: string;
+    employeeId: string;
+    extras: { 
+        tempId: number; // ID temporal para la UI
+        serviceId: string; 
+        employeeId: string; 
+    }[];
+}
+
+// --- UTILS DE ESTILO ---
+const getCategoryInfo = (category: string = 'general') => {
+    switch (category?.toLowerCase()) {
+        case 'cut': return { label: 'Corte', icon: Scissors, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200' };
+        case 'bath': return { label: 'Baño', icon: Droplets, color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-200' };
+        case 'addon': return { label: 'Adicional', icon: Sparkles, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' };
+        default: return { label: 'General', icon: Box, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' };
     }
-    return slots;
 };
 
-export default function NewAppointmentDialog() {
+// --- LÓGICA DE FILTRADO ---
+const isServiceCompatible = (serviceName: string, petSize: string) => {
+    if (!petSize) return true;
+    
+    const sName = serviceName.toLowerCase();
+    const pSize = petSize.toLowerCase();
+
+    const keywordsExtra = ['extra', 'gigante', 'giant'];
+    const keywordsGrande = ['grande', 'large', 'largo'];
+    const keywordsMediano = ['mediano', 'medium', 'estandar'];
+    const keywordsChico = ['chico', 'pequeño', 'small', 'mini', 'toy', 'puppy', 'cachorro'];
+
+    const svcIsExtra = keywordsExtra.some(k => sName.includes(k));
+    const svcIsGrande = !svcIsExtra && keywordsGrande.some(k => sName.includes(k));
+    const svcIsMediano = keywordsMediano.some(k => sName.includes(k));
+    const svcIsChico = keywordsChico.some(k => sName.includes(k));
+
+    if (!svcIsExtra && !svcIsGrande && !svcIsMediano && !svcIsChico) return true;
+
+    const petIsExtra = keywordsExtra.some(k => pSize.includes(k));
+    const petIsGrande = !petIsExtra && keywordsGrande.some(k => pSize.includes(k));
+    const petIsMediano = keywordsMediano.some(k => pSize.includes(k));
+    const petIsChico = keywordsChico.some(k => pSize.includes(k));
+
+    if (petIsExtra && svcIsExtra) return true;
+    if (petIsGrande && svcIsGrande) return true;
+    if (petIsMediano && svcIsMediano) return true;
+    if (petIsChico && svcIsChico) return true;
+
+    return false;
+};
+
+// --- SELECTOR DE SERVICIOS (ESTANDARIZADO) ---
+function SearchableServiceSelect({ services, value, onChange, disabled, petSize, placeholder = "Seleccionar servicio..." }: any) {
+    const [open, setOpen] = useState(false);
+    
+    const selected = services.find((s:any) => String(s.id) === String(value));
+    const catInfo = getCategoryInfo(selected?.category);
+    const Icon = catInfo.icon;
+
+    const availableServices = useMemo(() => {
+        return services.filter((s: Service) => {
+            if (!s.active) return false; 
+            return isServiceCompatible(s.name, petSize);
+        });
+    }, [services, petSize]);
+
+    const groups = useMemo(() => {
+        return {
+            cut: availableServices.filter((s: Service) => s.category === 'cut'),
+            bath: availableServices.filter((s: Service) => s.category === 'bath'),
+            addon: availableServices.filter((s: Service) => s.category === 'addon'),
+            general: availableServices.filter((s: Service) => !['cut', 'bath', 'addon'].includes(s.category))
+        };
+    }, [availableServices]);
+
+    return (
+        <Popover open={open} onOpenChange={setOpen} modal={true}>
+            <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" aria-expanded={open} disabled={disabled} className={cn("w-full justify-between h-9 bg-white font-normal px-3 text-left border-slate-200 shadow-sm transition-all", selected && !disabled && `border-l-4 ${catInfo.border.replace('border', 'border-l')}`)}>
+                    <div className="flex items-center gap-2 truncate w-full">
+                        {selected ? <Icon size={14} className={cn("shrink-0", catInfo.color)}/> : <Scissors size={14} className="text-slate-400"/>}
+                        <div className="flex flex-col items-start truncate">
+                            <span className="truncate text-xs font-medium text-slate-700">
+                                {selected ? selected.name : placeholder}
+                            </span>
+                            {selected && (
+                                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                    {selected.duration_minutes} min • ${selected.base_price}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {!disabled && <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[300px] p-0 z-[9999]" align="start">
+                <Command shouldFilter={false}> 
+                    <CommandInput placeholder={`Buscar para ${petSize || 'todos'}...`} />
+                    <CommandList className="max-h-[300px] overflow-y-auto">
+                        <CommandEmpty>
+                            <div className="py-2 text-center text-xs text-slate-500">
+                                No hay servicios disponibles para talla <strong>{petSize || 'General'}</strong>
+                            </div>
+                        </CommandEmpty>
+                        
+                        {groups.cut.length > 0 && (
+                            <CommandGroup heading="Cortes y Estilismo">
+                                {groups.cut.map((s: Service) => (
+                                    <ServiceItem key={s.id} service={s} currentId={value} onSelect={(id: string) => { onChange(id); setOpen(false); }} />
+                                ))}
+                            </CommandGroup>
+                        )}
+                        
+                        {(groups.cut.length > 0 && groups.bath.length > 0) && <CommandSeparator />}
+
+                        {groups.bath.length > 0 && (
+                            <CommandGroup heading="Baños">
+                                {groups.bath.map((s: Service) => (
+                                    <ServiceItem key={s.id} service={s} currentId={value} onSelect={(id: string) => { onChange(id); setOpen(false); }} />
+                                ))}
+                            </CommandGroup>
+                        )}
+
+                        {(groups.bath.length > 0 && groups.addon.length > 0) && <CommandSeparator />}
+
+                        {groups.addon.length > 0 && (
+                            <CommandGroup heading="Adicionales">
+                                {groups.addon.map((s: Service) => (
+                                    <ServiceItem key={s.id} service={s} currentId={value} onSelect={(id: string) => { onChange(id); setOpen(false); }} />
+                                ))}
+                            </CommandGroup>
+                        )}
+
+                        {groups.general.length > 0 && (
+                            <CommandGroup heading="Otros">
+                                {groups.general.map((s: Service) => (
+                                    <ServiceItem key={s.id} service={s} currentId={value} onSelect={(id: string) => { onChange(id); setOpen(false); }} />
+                                ))}
+                            </CommandGroup>
+                        )}
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+function ServiceItem({ service, currentId, onSelect }: any) {
+    return (
+        <CommandItem value={service.name} onSelect={() => onSelect(service.id)} className="cursor-pointer">
+            <Check className={cn("mr-2 h-4 w-4", String(currentId) === String(service.id) ? "opacity-100" : "opacity-0")} />
+            <div className="flex flex-col">
+                <span className="font-medium text-slate-700">{service.name}</span>
+                <span className="text-[10px] text-slate-400">{service.duration_minutes} min • ${service.base_price}</span>
+            </div>
+        </CommandItem>
+    )
+}
+
+function SearchableEmployeeSelect({ employees, value, onChange }: any) {
+    const [open, setOpen] = useState(false);
+    const selected = employees.find((e:any) => String(e.id) === String(value));
+    return (
+        <Popover open={open} onOpenChange={setOpen} modal={true}>
+            <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between h-9 bg-white font-normal px-3 text-left border-slate-200 shadow-sm">
+                    <div className="flex items-center gap-2 truncate">
+                        <div className="w-2 h-2 rounded-full border border-black/10" style={{backgroundColor: selected?.color || '#e2e8f0'}}></div>
+                        <span className="truncate text-xs">{selected ? `${selected.first_name} ${selected.last_name || ''}` : "Automático"}</span>
+                    </div>
+                    <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-0 z-[9999]" align="start">
+                <Command>
+                    <CommandInput placeholder="Buscar..." />
+                    <CommandList>
+                        <CommandEmpty>No encontrado.</CommandEmpty>
+                        <CommandGroup>
+                            {employees.map((emp:any) => (
+                                <CommandItem key={emp.id} onSelect={() => { onChange(String(emp.id)); setOpen(false); }}>
+                                    <div className="w-2 h-2 rounded-full mr-2" style={{backgroundColor: emp.color}}></div>
+                                    {emp.first_name} {emp.last_name}
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+// --- STEPPER VISUAL ---
+function StepIndicator({ currentStep }: { currentStep: number }) {
+    return (
+        <div className="flex items-center w-full px-6 py-4 bg-slate-50 border-b border-slate-100">
+            <div className="flex items-center w-full">
+                {/* Paso 1 */}
+                <div className="flex flex-col items-center relative z-10">
+                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300", currentStep >= 1 ? "bg-slate-900 text-white shadow-md" : "bg-white border border-slate-200 text-slate-400")}>
+                        1
+                    </div>
+                    <span className={cn("text-[10px] mt-1 font-medium absolute -bottom-4 w-20 text-center", currentStep >= 1 ? "text-slate-900" : "text-slate-400")}>Cliente</span>
+                </div>
+                
+                {/* Conector */}
+                <div className={cn("flex-1 h-[2px] mx-2 rounded-full transition-all duration-500", currentStep >= 2 ? "bg-slate-900" : "bg-slate-200")}></div>
+
+                {/* Paso 2 */}
+                <div className="flex flex-col items-center relative z-10">
+                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300", currentStep >= 2 ? "bg-slate-900 text-white shadow-md" : "bg-white border border-slate-200 text-slate-400")}>
+                        2
+                    </div>
+                    <span className={cn("text-[10px] mt-1 font-medium absolute -bottom-4 w-20 text-center", currentStep >= 2 ? "text-slate-900" : "text-slate-400")}>Detalles</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- COMPONENTE PRINCIPAL ---
+export default function NewAppointmentDialog({ 
+  onSuccess 
+}: { 
+  onSuccess: () => void 
+}) {
+  const supabase = createClient();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  
+
   // Data
-  const [clients, setClients] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
-  
-  // Selección
-  const [selectedClient, setSelectedClient] = useState<any | null>(null);
-  const [clientPets, setClientPets] = useState<any[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+
+  // Selection State
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [selectedClientName, setSelectedClientName] = useState<string>(""); 
   const [selectedPetIds, setSelectedPetIds] = useState<string[]>([]);
-  
-  // Configuración
-  const [configs, setConfigs] = useState<Record<string, AppointmentConfig>>({});
-  
-  // Globales
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("09:00");
-  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState<string>("");
+  const [time, setTime] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
 
-  const router = useRouter();
-  const supabase = createClient();
-  const timeSlots = useMemo(() => generateTimeSlots(), []);
+  // Map: PetID -> Selection Config (Main + Extras)
+  const [selections, setSelections] = useState<Record<string, PetSelection>>({});
 
-  // 1. Cargar Datos
+  // Buscador
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [showClientResults, setShowClientResults] = useState(false);
+
+  // Cargar datos iniciales
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
-        const [clientsRes, servicesRes, employeesRes] = await Promise.all([
-          supabase.from('clients').select('*').order('full_name'),
-          supabase.from('services').select('*').order('name'),
-          supabase.from('employees').select('*').eq('active', true).order('first_name')
-        ]);
+        const { data: empData } = await supabase.from('employees').select('*').eq('active', true);
+        if (empData) setEmployees(empData);
 
-        if (clientsRes.data) setClients(clientsRes.data);
-        
-        // Deduplicación de servicios
-        if (servicesRes.data) {
-            const uniqueServices = Array.from(
-                new Map(servicesRes.data.map(s => [s.name, s])).values()
-            );
-            setServices(uniqueServices);
-        }
+        const { data: svcData } = await supabase
+            .from('services')
+            .select('*')
+            .eq('active', true) 
+            .order('name');
+        if (svcData) setServices(svcData);
 
-        if (employeesRes.data) setEmployees(employeesRes.data);
-        
-        setDate(new Date().toISOString().split('T')[0]);
-        const now = new Date();
-        const minutes = Math.ceil(now.getMinutes() / 15) * 15;
-        const rounded = setMinutes(now, minutes);
-        setTime(format(rounded, 'HH:mm'));
+        // Reset
+        setStep(1);
+        setSelectedClientId("");
+        setSelectedClientName("");
+        setSelectedPetIds([]);
+        setSelections({});
+        setDate(format(new Date(), 'yyyy-MM-dd'));
+        setTime("09:00");
+        setNotes("");
+        setSearchTerm("");
+        setClients([]);
       };
       fetchData();
-    } else {
-      setTimeout(() => {
-        setStep(1); setSelectedClient(null); setSelectedPetIds([]); setConfigs({}); setNotes("");
-      }, 300);
     }
   }, [open]);
 
-  // 2. Helpers
-  const handleClientSelect = async (client: any) => {
-    setSelectedClient(client);
-    setLoading(true);
-    const { data } = await supabase.from('pets').select('*').eq('client_id', client.id);
-    if (data) setClientPets(data);
-    setLoading(false);
-    setStep(2);
+  // BUSQUEDA AVANZADA (CLIENTE + MASCOTA)
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+        if (searchTerm.length >= 2) {
+            setIsSearching(true);
+            setShowClientResults(true);
+            
+            // 1. Buscar en CLIENTES (nombre o telefono)
+            const { data: clientsData } = await supabase
+                .from('clients')
+                .select('id, full_name, phone')
+                .or(`full_name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
+                .limit(5);
+
+            // 2. Buscar en MASCOTAS (nombre)
+            const { data: petsData } = await supabase
+                .from('pets')
+                .select('client_id, name')
+                .ilike('name', `%${searchTerm}%`)
+                .limit(5);
+
+            // TIPO EXPLICITO PARA EVITAR ERROR TS
+            let allClients: Client[] = [...(clientsData || [])].map(c => ({...c, pet_names: []}));
+
+            // 3. Si hubo coincidencias en mascotas, traemos a sus dueños
+            if (petsData && petsData.length > 0) {
+                const clientIdsFromPets = petsData.map(p => p.client_id);
+                const { data: petOwners } = await supabase
+                    .from('clients')
+                    .select('id, full_name, phone')
+                    .in('id', clientIdsFromPets);
+                
+                if (petOwners) {
+                    // Agregamos info de la mascota encontrada al objeto cliente para mostrarla
+                    const ownersWithPetInfo = petOwners.map(owner => {
+                        const matchedPets = petsData.filter(p => p.client_id === owner.id).map(p => p.name);
+                        return { ...owner, pet_names: matchedPets };
+                    });
+                    allClients = [...allClients, ...ownersWithPetInfo];
+                }
+            }
+
+            // 4. Eliminar duplicados (por ID)
+            const uniqueClientsMap = new Map<string, Client>();
+            allClients.forEach(c => {
+                if(!uniqueClientsMap.has(c.id)){
+                    uniqueClientsMap.set(c.id, c);
+                } else {
+                    const existing = uniqueClientsMap.get(c.id);
+                    if (c.pet_names && c.pet_names.length > 0 && existing) {
+                        existing.pet_names = c.pet_names;
+                    }
+                }
+            });
+            
+            setClients(Array.from(uniqueClientsMap.values()));
+            setIsSearching(false);
+        } else {
+            setClients([]);
+            setShowClientResults(false);
+        }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  // Cargar mascotas al seleccionar cliente
+  useEffect(() => {
+    if (selectedClientId) {
+        const fetchPets = async () => {
+            const { data } = await supabase.from('pets').select('*').eq('client_id', selectedClientId);
+            if (data) setPets(data);
+        };
+        fetchPets();
+    } else {
+        setPets([]);
+    }
+  }, [selectedClientId]);
+
+  const handleClientSelect = (client: Client) => {
+      setSelectedClientId(client.id);
+      setSelectedClientName(client.full_name);
+      setSearchTerm(client.full_name); 
+      setShowClientResults(false); 
   };
 
-  const togglePetSelection = (petId: string) => {
-    setSelectedPetIds(prev => {
-      if (prev.includes(petId)) {
-        const newIds = prev.filter(id => id !== petId);
-        const newConfigs = { ...configs };
-        delete newConfigs[petId];
-        setConfigs(newConfigs);
-        return newIds;
-      } else {
-        setConfigs(prevConf => ({ ...prevConf, [petId]: { serviceIds: [], employeeId: "" } }));
-        return [...prev, petId];
-      }
-    });
+  const handlePetToggle = (petId: string) => {
+    setSelectedPetIds(prev => 
+        prev.includes(petId) ? prev.filter(id => id !== petId) : [...prev, petId]
+    );
+    // Inicializar selección vacía para esta mascota si no existe
+    if (!selections[petId]) {
+        setSelections(prev => ({
+            ...prev,
+            [petId]: { mainServiceId: "", employeeId: "", extras: [] }
+        }));
+    }
   };
 
-  const toggleServiceForPet = (petId: string, serviceId: string) => {
-      setConfigs(prev => {
-          const currentServices = prev[petId]?.serviceIds || [];
-          let newServices = currentServices.includes(serviceId) 
-            ? currentServices.filter(id => id !== serviceId)
-            : [...currentServices, serviceId];
-          return { ...prev, [petId]: { ...prev[petId], serviceIds: newServices } };
-      });
+  // --- MANEJO DE SELECCIONES ---
+  const handleMainServiceChange = (petId: string, val: string) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: { ...prev[petId], mainServiceId: val }
+      }));
   };
 
-  const updatePetEmployee = (petId: string, employeeId: string) => {
-    setConfigs(prev => ({ ...prev, [petId]: { ...prev[petId], employeeId } }));
+  const handleMainEmployeeChange = (petId: string, val: string) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: { ...prev[petId], employeeId: val }
+      }));
   };
 
-  // 3. Filtrado por Talla
-  const getCompatibleServices = (petId: string) => {
-      const pet = clientPets.find(p => p.id === petId);
-      if (!pet || !pet.size) return services;
-
-      const size = pet.size.toLowerCase();
-      const isPetChico = size.includes('chico') || size.includes('puppy') || size.includes('mini');
-      const isPetExtra = size.includes('extra') || size.includes('gigante');
-      const isPetMediano = size.includes('mediano');
-      const isPetGrande = size.includes('grande') && !isPetExtra;
-
-      return services.filter(svc => {
-          const name = svc.name.toLowerCase();
-          const isSvcChico = name.includes('chico') || name.includes('puppy');
-          const isSvcExtra = name.includes('extra') || name.includes('gigante');
-          const isSvcMediano = name.includes('mediano');
-          const isSvcGrande = name.includes('grande') && !isSvcExtra;
-          
-          if (!isSvcChico && !isSvcMediano && !isSvcGrande && !isSvcExtra) return true;
-          
-          if (isPetChico && isSvcChico) return true;
-          if (isPetMediano && isSvcMediano) return true;
-          if (isPetGrande && isSvcGrande) return true;
-          if (isPetExtra && isSvcExtra) return true;
-          
-          return false; 
-      });
+  const handleAddExtra = (petId: string) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: { 
+              ...prev[petId], 
+              extras: [...(prev[petId]?.extras || []), { tempId: Math.random(), serviceId: "", employeeId: prev[petId]?.employeeId || "" }] 
+          }
+      }));
   };
 
-  // 4. Guardar (CORREGIDO: Sin campo de precio)
+  const handleRemoveExtra = (petId: string, tempId: number) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: {
+              ...prev[petId],
+              extras: prev[petId].extras.filter(e => e.tempId !== tempId)
+          }
+      }));
+  };
+
+  const handleExtraServiceChange = (petId: string, tempId: number, val: string) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: {
+              ...prev[petId],
+              extras: prev[petId].extras.map(e => e.tempId === tempId ? { ...e, serviceId: val } : e)
+          }
+      }));
+  };
+
+  const handleExtraEmployeeChange = (petId: string, tempId: number, val: string) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: {
+              ...prev[petId],
+              extras: prev[petId].extras.map(e => e.tempId === tempId ? { ...e, employeeId: val } : e)
+          }
+      }));
+  };
+
   const handleSave = async () => {
     if (selectedPetIds.length === 0) return toast.error("Selecciona al menos una mascota");
-    for (const petId of selectedPetIds) {
-      if (!configs[petId]?.serviceIds || configs[petId].serviceIds.length === 0) {
-        const pet = clientPets.find(p => p.id === petId);
-        return toast.error(`Falta seleccionar servicio para ${pet?.name}`);
-      }
-    }
+    if (!date || !time) return toast.error("Define fecha y hora");
 
     setLoading(true);
     try {
-      const servicesToInsert = [];
-      
-      for (const petId of selectedPetIds) {
-        const config = configs[petId];
-        
-        // 1. Crear Cita Padre
-        const { data: apptData, error: apptError } = await supabase
-          .from('appointments')
-          .insert({ 
-            client_id: selectedClient.id, 
-            pet_id: petId, 
-            date, 
-            notes, 
-            status: 'confirmed' 
-          })
-          .select().single();
+        const baseDate = new Date(`${date}T${time}:00`); 
 
-        if (apptError) throw apptError;
+        for (const petId of selectedPetIds) {
+            const config = selections[petId];
+            if (!config?.mainServiceId) throw new Error("Falta seleccionar servicio principal para una mascota");
 
-        let currentStartTime = new Date(`${date}T${time}:00`);
-        
-        // 2. Crear Servicios
-        for (const svcId of config.serviceIds) {
-            const svcInfo = services.find(s => s.id === svcId);
-            const duration = svcInfo?.duration_minutes || 30;
-            // OMITIMOS EL PRECIO: La tabla appointment_services no tiene esa columna
-            const endTime = addMinutes(currentStartTime, duration);
+            // 1. Crear Cita
+            const { data: appt, error: apptError } = await supabase.from('appointments').insert({
+                client_id: selectedClientId,
+                pet_id: petId,
+                date: baseDate.toISOString(), 
+                status: 'scheduled',
+                notes: notes
+            }).select().single();
 
-            servicesToInsert.push({
-                appointment_id: apptData.id,
-                service_id: svcId,
-                employee_id: config.employeeId || null,
-                start_time: currentStartTime.toISOString(),
-                end_time: endTime.toISOString(),
+            if (apptError) throw apptError;
+
+            // 2. Insertar Servicio Principal
+            const mainSvc = services.find(s => s.id === config.mainServiceId);
+            const mainDuration = mainSvc?.duration_minutes || 60;
+            const mainEndTime = addMinutes(baseDate, mainDuration);
+
+            await supabase.from('appointment_services').insert({
+                appointment_id: appt.id,
+                service_id: config.mainServiceId,
+                employee_id: config.employeeId || null, 
+                start_time: baseDate.toISOString(),
+                end_time: mainEndTime.toISOString(),
                 resource_type: 'table'
-                // NOTA: Si en el futuro agregas la columna base_price a appointment_services, descomenta esto:
-                // base_price: svcInfo?.base_price || 0 
             });
-            currentStartTime = endTime;
+
+            // 3. Insertar Servicios Extras (Encadenados en tiempo)
+            let currentStartTime = mainEndTime; // El extra empieza cuando termina el principal
+            
+            for (const extra of config.extras) {
+                if (!extra.serviceId) continue;
+                
+                const extraSvc = services.find(s => s.id === extra.serviceId);
+                const extraDuration = extraSvc?.duration_minutes || 30;
+                const extraEndTime = addMinutes(currentStartTime, extraDuration);
+
+                await supabase.from('appointment_services').insert({
+                    appointment_id: appt.id,
+                    service_id: extra.serviceId,
+                    employee_id: extra.employeeId || null,
+                    start_time: currentStartTime.toISOString(),
+                    end_time: extraEndTime.toISOString(),
+                    resource_type: 'table'
+                });
+
+                currentStartTime = extraEndTime; // Actualizar inicio para el siguiente extra
+            }
         }
-      }
-      
-      const { error: servicesError } = await supabase.from('appointment_services').insert(servicesToInsert);
-      if (servicesError) throw servicesError;
 
-      toast.success(`${selectedPetIds.length} Mascotas agendadas`);
-      setOpen(false);
-      router.refresh();
-    } catch (error: any) {
-      console.error(error);
-      toast.error("Error: " + error.message);
+        toast.success("Citas creadas exitosamente");
+        setOpen(false);
+        onSuccess();
+    } catch (e: any) {
+        toast.error(e.message || "Error al crear citas");
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const getServiceIcon = (category: string) => {
-    switch(category) {
-      case 'cut': return <Scissors className="w-3 h-3"/>;
-      case 'bath': return <Droplets className="w-3 h-3"/>;
-      case 'addon': return <Sparkles className="w-3 h-3"/>;
-      default: return <Box className="w-3 h-3"/>;
+        setLoading(false);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-md transition-all hover:scale-105">
-          <CalendarPlus className="mr-2 h-4 w-4" /> Agendar Cita
+        <Button className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm transition-all hover:scale-[1.02]">
+            <CalendarPlus className="mr-2 h-4 w-4" /> Nueva Cita
         </Button>
       </DialogTrigger>
-      
-      <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-slate-50 gap-0 h-[85vh] flex flex-col">
-        {/* Header */}
-        <div className="bg-white px-6 py-4 border-b border-slate-200 shrink-0">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              <CalendarPlus className="w-5 h-5 text-purple-600"/> Nueva Cita
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-2 mt-4">
-            <div className={cn("h-1.5 flex-1 rounded-full transition-all", step >= 1 ? "bg-purple-600" : "bg-slate-200")}></div>
-            <div className={cn("h-1.5 flex-1 rounded-full transition-all", step >= 2 ? "bg-purple-600" : "bg-slate-200")}></div>
-            <div className={cn("h-1.5 flex-1 rounded-full transition-all", step >= 3 ? "bg-purple-600" : "bg-slate-200")}></div>
-          </div>
-        </div>
+      <DialogContent className="sm:max-w-[650px] p-0 overflow-hidden bg-white gap-0 border-slate-200">
+        <DialogHeader className="p-5 pb-0 bg-white">
+            <DialogTitle className="text-xl font-bold text-slate-800">Agendar Cita</DialogTitle>
+        </DialogHeader>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          
-          {/* PASO 1: CLIENTE */}
+        {/* INDICADOR DE PASOS (WIZARD) */}
+        <StepIndicator currentStep={step} />
+
+        <div className="p-6 h-[450px] overflow-y-auto">
           {step === 1 && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold text-slate-800">¿Quién nos visita hoy?</h3>
-                <p className="text-sm text-slate-500">Busca por nombre o teléfono.</p>
-              </div>
-              <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-                <Command className="rounded-lg border-0 shadow-none">
-                  <CommandInput placeholder="Buscar cliente..." className="h-11" autoFocus/>
-                  <CommandList className="max-h-[300px]">
-                    <CommandEmpty>No encontrado.</CommandEmpty>
-                    <CommandGroup>
-                      {clients.map(client => (
-                        <CommandItem key={client.id} onSelect={() => handleClientSelect(client)} className="cursor-pointer py-3 aria-selected:bg-purple-50">
-                          <User className="mr-3 h-4 w-4 text-slate-400" />
-                          <div className="flex flex-col">
-                            <span className="font-medium text-slate-800">{client.full_name}</span>
-                            <span className="text-xs text-slate-400">{client.phone || 'Sin teléfono'}</span>
-                          </div>
-                          <Check className={cn("ml-auto h-4 w-4 text-purple-600", selectedClient?.id === client.id ? "opacity-100" : "opacity-0")} />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </div>
-            </div>
-          )}
-
-          {/* PASO 2: MASCOTAS */}
-          {step === 2 && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold text-slate-800">Selecciona las mascotas</h3>
-                    <Button variant="ghost" size="sm" onClick={() => setStep(1)} className="text-slate-400">Cambiar</Button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {clientPets.length === 0 ? (
-                        <div className="col-span-2 py-8 text-center bg-white border border-dashed rounded-xl text-slate-500">Sin mascotas registradas.</div>
-                    ) : clientPets.map(pet => {
-                        const isSelected = selectedPetIds.includes(pet.id);
-                        return (
-                            <div 
-                                key={pet.id} 
-                                onClick={() => togglePetSelection(pet.id)}
-                                className={cn(
-                                    "cursor-pointer p-4 rounded-xl border-2 transition-all flex items-center gap-4 bg-white",
-                                    isSelected ? "border-purple-500 bg-purple-50/50 shadow-md" : "border-transparent shadow-sm hover:border-slate-200"
-                                )}
-                            >
-                                <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", isSelected ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-400")}>
-                                    <Dog size={20} />
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-slate-800">{pet.name}</h4>
-                                    <p className="text-xs text-slate-500">{pet.breed} • {pet.size || 'ND'}</p>
-                                </div>
-                                {isSelected && <Check className="ml-auto text-purple-600" size={16} />}
+            <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300">
+                {/* BUSCADOR CLIENTE */}
+                <div className="space-y-2 relative">
+                    <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                        <User size={12}/> Buscar Cliente (Nombre, Mascota o Teléfono)
+                    </Label>
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <Input 
+                            placeholder="Ej: Juan, Firulais, 811..." 
+                            value={searchTerm}
+                            onChange={(e) => {
+                                setSearchTerm(e.target.value);
+                                if (selectedClientId) { 
+                                    setSelectedClientId("");
+                                    setSelectedClientName("");
+                                    setPets([]);
+                                    setSelectedPetIds([]);
+                                }
+                            }}
+                            className={cn("pl-9 h-10 border-slate-200 focus:ring-purple-500", selectedClientId && "border-purple-500 bg-purple-50 text-purple-900 font-medium")}
+                        />
+                        {selectedClientId && (
+                            <div className="absolute right-3 top-3">
+                                <Check className="h-4 w-4 text-purple-600" />
                             </div>
-                        );
-                    })}
+                        )}
+                    </div>
+
+                    {/* RESULTADOS FLOTANTES */}
+                    {showClientResults && searchTerm.length >= 2 && !selectedClientId && (
+                        <div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-lg shadow-xl z-50 mt-1 max-h-48 overflow-y-auto">
+                            {isSearching ? (
+                                <div className="p-4 text-center text-xs text-slate-400"><Loader2 className="animate-spin h-4 w-4 mx-auto mb-1"/>Buscando...</div>
+                            ) : clients.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-slate-400">No se encontraron clientes.</div>
+                            ) : (
+                                <div className="py-1">
+                                    {clients.map(client => (
+                                        <div 
+                                            key={client.id}
+                                            className="px-4 py-2.5 hover:bg-slate-50 cursor-pointer flex items-center justify-between group transition-colors"
+                                            onClick={() => handleClientSelect(client)}
+                                        >
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-sm text-slate-700 group-hover:text-slate-900">{client.full_name}</span>
+                                                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                                    <span className="flex items-center gap-1"><Phone size={10}/> {client.phone}</span>
+                                                    {client.pet_names && client.pet_names.length > 0 && (
+                                                        <span className="flex items-center gap-1 text-purple-500 bg-purple-50 px-1 rounded">
+                                                            <Dog size={10}/> {client.pet_names.join(", ")}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <ArrowRight size={14} className="text-slate-300 group-hover:text-purple-500 opacity-0 group-hover:opacity-100 transition-all"/>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
-                <div className="mt-4 flex justify-end">
-                    <Button disabled={selectedPetIds.length === 0} onClick={() => setStep(3)} className="bg-purple-600 text-white">Continuar ({selectedPetIds.length})</Button>
-                </div>
+
+                {/* SELECCION MASCOTAS */}
+                {selectedClientId && (
+                    <div className="space-y-3 animate-in fade-in zoom-in-95 duration-300 delay-100">
+                        <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                            <Dog size={12}/> Seleccionar Mascotas
+                        </Label>
+                        {pets.length === 0 ? (
+                            <div className="p-6 border border-dashed rounded-xl text-center bg-slate-50">
+                                <Dog className="h-8 w-8 text-slate-300 mx-auto mb-2 opacity-50"/>
+                                <span className="text-sm text-slate-400 block">Este cliente no tiene mascotas registradas.</span>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {pets.map(pet => (
+                                    <div 
+                                        key={pet.id}
+                                        onClick={() => handlePetToggle(pet.id)}
+                                        className={cn(
+                                            "cursor-pointer border rounded-xl p-3 flex items-center gap-3 transition-all relative overflow-hidden",
+                                            selectedPetIds.includes(pet.id) 
+                                                ? "bg-white border-purple-500 shadow-md ring-1 ring-purple-100" 
+                                                : "bg-white border-slate-200 hover:border-purple-300 hover:bg-slate-50"
+                                        )}
+                                    >
+                                        <div className={cn("h-10 w-10 rounded-full flex items-center justify-center shrink-0 transition-colors", selectedPetIds.includes(pet.id) ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-400")}>
+                                            <Dog size={18} />
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className={cn("font-bold text-sm truncate", selectedPetIds.includes(pet.id) ? "text-slate-900" : "text-slate-600")}>{pet.name}</span>
+                                            <div className="flex gap-1 items-center">
+                                                <Badge variant="outline" className="text-[9px] h-4 px-1.5 text-slate-500 font-normal border-slate-300 bg-white">{pet.size}</Badge>
+                                            </div>
+                                        </div>
+                                        {selectedPetIds.includes(pet.id) && (
+                                            <div className="absolute top-0 right-0 bg-purple-500 text-white rounded-bl-lg p-1">
+                                                <Check size={12}/>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
           )}
 
-          {/* PASO 3: DETALLES */}
-          {step === 3 && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+          {step === 2 && (
+            <div className="flex flex-col h-full gap-6 animate-in slide-in-from-right-4 fade-in duration-300">
                 {/* FECHA Y HORA */}
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-2 gap-4">
-                    <div>
-                        <Label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Fecha</Label>
-                        <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="font-medium h-9"/>
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><CalendarPlus size={12}/> Fecha</Label>
+                        <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9 text-sm border-slate-200 bg-white focus:ring-0"/>
                     </div>
-                    <div>
-                        <Label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Hora de Llegada</Label>
-                        <Select value={time} onValueChange={setTime}>
-                            <SelectTrigger className="h-9 font-medium">
-                                <SelectValue placeholder="Seleccionar hora" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[200px] overflow-y-auto" position="popper" sideOffset={5}>
-                                {timeSlots.map(slot => (
-                                    <SelectItem key={slot} value={slot}>{slot}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Clock size={12}/> Hora Inicio</Label>
+                        <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="h-9 text-sm border-slate-200 bg-white focus:ring-0"/>
                     </div>
                 </div>
 
-                {/* CONFIGURACIÓN POR MASCOTA */}
-                <div>
-                    <Label className="text-xs font-bold text-slate-500 uppercase mb-3 block px-1">Servicios por Mascota</Label>
-                    <div className="space-y-4">
-                        {selectedPetIds.map((petId, index) => {
-                            const pet = clientPets.find(p => p.id === petId);
-                            const config = configs[petId] || { serviceIds: [] };
-                            const compatibleServices = getCompatibleServices(petId); 
-                            
-                            return (
-                                <div key={petId} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm relative">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <div className="bg-slate-900 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">{index + 1}</div>
-                                        <span className="font-bold text-sm text-slate-800">{pet?.name}</span>
-                                        <Badge variant="secondary" className="text-[10px]">{pet?.breed}</Badge>
-                                        <span className="ml-auto text-[10px] text-slate-400 uppercase font-bold tracking-wider">{pet?.size}</span>
-                                    </div>
+                <div className="space-y-3">
+                    <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Scissors size={12}/> Configurar Servicios</Label>
+                    <div className="space-y-6">
+                        {selectedPetIds.map(petId => {
+                            const pet = pets.find(p => p.id === petId);
+                            const config = selections[petId] || { mainServiceId: "", employeeId: "", extras: [] };
+                            const selectedService = services.find(s => String(s.id) === String(config.mainServiceId));
+                            const catInfo = getCategoryInfo(selectedService?.category);
 
-                                    <div className="grid grid-cols-1 gap-4">
-                                        {/* SERVICIOS */}
-                                        <div>
-                                            <Label className="text-[10px] text-slate-400 uppercase font-bold mb-1.5 block">Servicios</Label>
-                                            <div className="flex flex-wrap gap-1.5 mb-2">
-                                                {config.serviceIds?.map(svcId => {
-                                                    const svc = services.find(s => s.id === svcId);
-                                                    return (
-                                                        <Badge key={svcId} variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 pr-1 gap-1 flex items-center">
-                                                            {getServiceIcon(svc?.category)}
-                                                            {svc?.name}
-                                                            <button onClick={() => toggleServiceForPet(petId, svcId)} className="hover:bg-purple-200 rounded-full p-0.5 ml-1">
-                                                                <X size={10} />
-                                                            </button>
-                                                        </Badge>
-                                                    );
-                                                })}
-                                                
-                                                <Popover modal={true}>
-                                                    <PopoverTrigger asChild>
-                                                        <Button variant="outline" size="sm" className="h-6 text-xs border-dashed text-slate-500 hover:text-purple-600 hover:border-purple-300">
-                                                            <Plus size={12} className="mr-1"/> Agregar
-                                                        </Button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent className="w-[300px] p-0" align="start">
-                                                        <Command>
-                                                            <CommandInput placeholder="Buscar servicio..." />
-                                                            <CommandList>
-                                                                <CommandEmpty>No encontrado.</CommandEmpty>
-                                                                <CommandGroup heading="Sugeridos para su talla">
-                                                                    {compatibleServices.map(svc => {
-                                                                        const isSelected = config.serviceIds?.includes(svc.id);
-                                                                        return (
-                                                                            <CommandItem key={svc.id} onSelect={() => toggleServiceForPet(petId, svc.id)} className="text-xs cursor-pointer">
-                                                                                <div className={cn("mr-2 flex h-3 w-3 items-center justify-center rounded border border-slate-400", isSelected ? "bg-purple-600 border-purple-600 text-white" : "opacity-50")}>
-                                                                                    {isSelected && <Check className="h-2.5 w-2.5" />}
-                                                                                </div>
-                                                                                <div className="flex-1 flex items-center gap-2">
-                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                                                                    <span>{svc.name}</span>
-                                                                                    <span className="ml-auto text-[10px] opacity-50">{svc.duration_minutes}m</span>
-                                                                                </div>
-                                                                            </CommandItem>
-                                                                        );
-                                                                    })}
-                                                                </CommandGroup>
-                                                            </CommandList>
-                                                        </Command>
-                                                    </PopoverContent>
-                                                </Popover>
+                            return (
+                                <div key={petId} className={cn("bg-white border rounded-xl p-4 shadow-sm relative overflow-hidden transition-all", selectedService ? `border-l-4 ${catInfo.border.replace('border', 'border-l')}` : "border-slate-200")}>
+                                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-50">
+                                        <Dog size={14} className="text-slate-400"/>
+                                        <span className="font-bold text-sm text-slate-800">{pet?.name}</span>
+                                        <span className="text-slate-300 mx-1">|</span>
+                                        <span className="text-xs text-slate-500">{pet?.breed}</span>
+                                        <Badge variant="outline" className="ml-auto text-[9px] font-normal border-slate-200 text-slate-400 flex items-center gap-1">
+                                            <Ruler size={10}/> {pet?.size}
+                                        </Badge>
+                                    </div>
+                                    
+                                    {/* MAIN SERVICE */}
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <Label className="text-[10px] text-slate-400 uppercase font-bold">Servicio Principal</Label>
+                                                <SearchableServiceSelect 
+                                                    services={services}
+                                                    value={config.mainServiceId}
+                                                    petSize={pet?.size || ''}
+                                                    onChange={(val: string) => handleMainServiceChange(petId, val)}
+                                                    placeholder="Seleccionar Servicio Principal..."
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label className="text-[10px] text-slate-400 uppercase font-bold">Encargado</Label>
+                                                <SearchableEmployeeSelect 
+                                                    employees={employees}
+                                                    value={config.employeeId}
+                                                    onChange={(val: string) => handleMainEmployeeChange(petId, val)}
+                                                />
                                             </div>
                                         </div>
 
-                                        {/* EMPLEADO */}
-                                        <div>
-                                            <Label className="text-[10px] text-slate-400 uppercase font-bold mb-1 block">Encargado (Opcional)</Label>
-                                            <Select value={config.employeeId} onValueChange={(val) => updatePetEmployee(petId, val)}>
-                                                <SelectTrigger className="h-8 text-xs bg-slate-50 border-slate-200">
-                                                    <SelectValue placeholder="Sin asignar" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="unassigned">Sin asignar</SelectItem>
-                                                    {employees.map(emp => (
-                                                        <SelectItem key={emp.id} value={emp.id} className="text-xs">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-2 h-2 rounded-full" style={{backgroundColor: emp.color}}></div>
-                                                                {emp.first_name}
-                                                            </div>
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                        {/* EXTRA SERVICES LIST */}
+                                        {config.extras && config.extras.length > 0 && (
+                                            <div className="space-y-2 mt-2 pt-2 border-t border-dashed border-slate-100">
+                                                <Label className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1"><Sparkles size={10}/> Adicionales</Label>
+                                                {config.extras.map((extra) => (
+                                                    <div key={extra.tempId} className="flex gap-2 items-center bg-slate-50 p-2 rounded-md">
+                                                        <div className="flex-1">
+                                                            <SearchableServiceSelect 
+                                                                services={services}
+                                                                value={extra.serviceId}
+                                                                petSize={pet?.size || ''}
+                                                                onChange={(val: string) => handleExtraServiceChange(petId, extra.tempId, val)}
+                                                                placeholder="Servicio extra..."
+                                                            />
+                                                        </div>
+                                                        <div className="w-[140px]">
+                                                            <SearchableEmployeeSelect 
+                                                                employees={employees}
+                                                                value={extra.employeeId}
+                                                                onChange={(val: string) => handleExtraEmployeeChange(petId, extra.tempId, val)}
+                                                            />
+                                                        </div>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500" onClick={() => handleRemoveExtra(petId, extra.tempId)}>
+                                                            <X size={14}/>
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="w-full border-dashed text-slate-400 hover:text-purple-600 hover:border-purple-200 mt-2 h-8 text-xs"
+                                            onClick={() => handleAddExtra(petId)}
+                                        >
+                                            <Plus size={12} className="mr-1.5"/> Agregar Servicio Extra
+                                        </Button>
                                     </div>
                                 </div>
                             );
@@ -465,8 +794,8 @@ export default function NewAppointmentDialog() {
                     </div>
                 </div>
 
-                <div className="pt-2 pb-6">
-                    <Label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Notas Generales</Label>
+                <div className="pt-2">
+                    <Label className="text-xs font-bold text-slate-500 uppercase mb-1.5 flex items-center gap-1.5"><AlertTriangle size={12}/> Notas Generales</Label>
                     <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ej: La dueña pagará al recoger..." className="bg-white border-slate-200 h-9 text-sm"/>
                 </div>
             </div>
@@ -474,14 +803,28 @@ export default function NewAppointmentDialog() {
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-white border-t border-slate-200 shrink-0 flex justify-between">
-            {step > 1 && (
-                <Button variant="outline" onClick={() => setStep(step - 1)}>Atrás</Button>
-            )}
-            {step < 3 ? (
-                <Button className="ml-auto" variant="ghost" disabled>Paso {step} de 3</Button>
+        <div className="p-4 bg-white border-t border-slate-200 shrink-0 flex justify-between items-center">
+            {step > 1 ? (
+                <Button variant="outline" onClick={() => setStep(step - 1)} className="text-slate-500 hover:text-slate-800">
+                    <ArrowLeft className="mr-2 h-3 w-3"/> Atrás
+                </Button>
             ) : (
-                <Button onClick={handleSave} disabled={loading} className="bg-slate-900 text-white ml-auto min-w-[150px]">
+                <div className="text-[10px] text-slate-400 italic">Paso 1 de 2</div>
+            )}
+
+            {step < 2 ? (
+                <Button 
+                    className="ml-auto bg-slate-900 text-white hover:bg-slate-800" 
+                    onClick={() => {
+                        if(selectedPetIds.length > 0) setStep(2);
+                        else toast.error("Por favor selecciona al menos una mascota");
+                    }}
+                    disabled={selectedPetIds.length === 0}
+                >
+                    Siguiente Paso <ArrowRight className="ml-2 h-4 w-4"/>
+                </Button>
+            ) : (
+                <Button onClick={handleSave} disabled={loading} className="bg-slate-900 text-white ml-auto min-w-[160px] hover:bg-slate-800 shadow-md">
                     {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Check className="mr-2 h-4 w-4" />}
                     Confirmar Citas
                 </Button>
