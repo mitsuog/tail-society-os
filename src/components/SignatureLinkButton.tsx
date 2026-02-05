@@ -1,33 +1,59 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Link2, Check } from 'lucide-react';
+import { Link as LinkIcon, Check } from 'lucide-react';
 import { toast } from "sonner";
-import { useState } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
-export default function SignatureLinkButton({ clientId }: { clientId: string }) {
+// --- CORRECCIÓN: Agregamos isSigned a la definición ---
+interface SignatureLinkButtonProps {
+  clientId: string;
+  isSigned?: boolean | null; 
+}
+
+export default function SignatureLinkButton({ clientId, isSigned = false }: SignatureLinkButtonProps) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
-    // Generamos el link (Asumiendo que crearás una ruta publica /sign/[id])
-    const url = `${window.location.origin}/sign/${clientId}`;
+  const copyToClipboard = () => {
+    const link = `${window.location.origin}/waiver/${clientId}`;
+    navigator.clipboard.writeText(link);
     
-    navigator.clipboard.writeText(url);
     setCopied(true);
-    toast.success("Enlace de firma copiado al portapapeles");
-    
+    toast.success("Enlace de firma copiado");
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={handleCopy}
-      className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 transition-colors"
-    >
-      {copied ? <Check size={16} className="mr-2" /> : <Link2 size={16} className="mr-2" />}
-      {copied ? "Enlace Copiado" : "Copiar Link de Firma"}
-    </Button>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={copyToClipboard}
+            className={cn(
+                "h-9 text-xs transition-colors gap-2",
+                // Lógica visual: Verde si está firmado
+                isSigned 
+                    ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" 
+                    : "text-slate-500 hover:text-slate-900 bg-white"
+            )}
+          >
+            {copied ? <Check size={14}/> : <LinkIcon size={14}/>}
+            {isSigned ? "Link Firma (Vigente)" : "Copiar Link Firma"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Copiar enlace para firma digital</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

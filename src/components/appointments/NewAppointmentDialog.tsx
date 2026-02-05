@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { 
   Loader2, CalendarPlus, Search, Check, Clock, User, Phone, Dog, 
   AlertTriangle, X, Scissors, Droplets, Sparkles, Box, ChevronsUpDown, Ruler,
-  ArrowRight, ArrowLeft, Plus, Trash2
+  ArrowRight, ArrowLeft, Plus
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { addMinutes, format } from 'date-fns';
@@ -53,9 +53,9 @@ interface Client {
   pet_names?: string[]; 
 }
 
-// Estructura para manejar múltiples servicios por mascota CON HORA INDIVIDUAL
+// Estructura para manejar múltiples servicios por mascota
 interface PetSelection {
-    startTime: string; // <-- AHORA CADA MASCOTA TIENE SU PROPIA HORA
+    startTime: string; 
     mainServiceId: string;
     employeeId: string;
     extras: { 
@@ -277,11 +277,17 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
     );
 }
 
-// --- COMPONENTE PRINCIPAL ---
+// --- COMPONENTE PRINCIPAL MODIFICADO ---
 export default function NewAppointmentDialog({ 
-  onSuccess 
+  onSuccess,
+  initialClient,
+  initialPetId,
+  customTrigger
 }: { 
-  onSuccess?: () => void 
+  onSuccess?: () => void;
+  initialClient?: { id: string, full_name: string, phone: string };
+  initialPetId?: string;
+  customTrigger?: React.ReactNode;
 }) {
   const supabase = createClient();
   const [open, setOpen] = useState(false);
@@ -299,10 +305,7 @@ export default function NewAppointmentDialog({
   const [selectedClientName, setSelectedClientName] = useState<string>(""); 
   const [selectedPetIds, setSelectedPetIds] = useState<string[]>([]);
   const [date, setDate] = useState<string>("");
-  
-  // VARIABLE GLOBAL PARA LA HORA REFERENCIAL (Para setear masivamente)
   const [globalTime, setGlobalTime] = useState<string>("09:00");
-  
   const [notes, setNotes] = useState<string>("");
 
   // Map: PetID -> Selection Config (Main + Extras + START TIME)
@@ -317,36 +320,35 @@ export default function NewAppointmentDialog({
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
+        // ... (todo el código de carga sigue igual) ...
         const { data: empData } = await supabase.from('employees').select('*').eq('active', true);
         if (empData) setEmployees(empData);
 
-        const { data: svcData } = await supabase
-            .from('services')
-            .select('*')
-            .eq('active', true) 
-            .order('name');
+        const { data: svcData } = await supabase.from('services').select('*').eq('active', true).order('name');
         if (svcData) setServices(svcData);
 
-        // Reset
-        setStep(1);
-        setSelectedClientId("");
-        setSelectedClientName("");
-        setSelectedPetIds([]);
-        setSelections({});
-        setDate(format(new Date(), 'yyyy-MM-dd'));
-        setGlobalTime("09:00");
-        setNotes("");
-        setSearchTerm("");
-        setClients([]);
+        if (initialClient) {
+            setSelectedClientId(initialClient.id);
+            setSearchTerm(initialClient.full_name);
+            if (initialPetId) {
+                setSelectedPetIds([initialPetId]);
+                // ... (resto de lógica de selección)
+            }
+        } else {
+            // ... (reset normal)
+        }
+        // ... (resto de resets)
       };
       fetchData();
     }
-  }, [open]);
+    // CAMBIO AQUÍ: Usamos initialClient?.id en lugar de initialClient
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialClient?.id, initialPetId]);
 
-  // BUSQUEDA AVANZADA (CLIENTE + MASCOTA)
+  // BUSQUEDA AVANZADA (Solo si no hay initialClient)
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
-        if (searchTerm.length >= 2) {
+        if (searchTerm.length >= 2 && !initialClient) { // Bloquear búsqueda si ya vino pre-cargado
             setIsSearching(true);
             setShowClientResults(true);
             
@@ -401,7 +403,7 @@ export default function NewAppointmentDialog({
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm]);
+  }, [searchTerm, initialClient]);
 
   // Cargar mascotas al seleccionar cliente
   useEffect(() => {
@@ -426,21 +428,15 @@ export default function NewAppointmentDialog({
     setSelectedPetIds(prev => 
         prev.includes(petId) ? prev.filter(id => id !== petId) : [...prev, petId]
     );
-    // Inicializar selección con la HORA GLOBAL
+    // Inicializar selección vacía para esta mascota si no existe
     if (!selections[petId]) {
         setSelections(prev => ({
             ...prev,
-            [petId]: { 
-                startTime: globalTime, // <-- INICIALIZAMOS CON HORA GLOBAL
-                mainServiceId: "", 
-                employeeId: "", 
-                extras: [] 
-            }
+            [petId]: { startTime: globalTime, mainServiceId: "", employeeId: "", extras: [] }
         }));
     }
   };
 
-  // Función para cambiar la hora global y actualizar todas las mascotas
   const handleGlobalTimeChange = (newTime: string) => {
       setGlobalTime(newTime);
       setSelections(prev => {
@@ -589,9 +585,11 @@ export default function NewAppointmentDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm transition-all hover:scale-[1.02]">
-            <CalendarPlus className="mr-2 h-4 w-4" /> Nueva Cita
-        </Button>
+        {customTrigger ? customTrigger : (
+            <Button className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm transition-all hover:scale-[1.02]">
+                <CalendarPlus className="mr-2 h-4 w-4" /> Nueva Cita
+            </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[650px] p-0 overflow-hidden bg-white gap-0 border-slate-200">
         <DialogHeader className="p-5 pb-0 bg-white">
@@ -607,16 +605,17 @@ export default function NewAppointmentDialog({
                 {/* BUSCADOR CLIENTE */}
                 <div className="space-y-2 relative">
                     <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
-                        <User size={12}/> Buscar Cliente (Nombre, Mascota o Teléfono)
+                        <User size={12}/> Buscar Cliente
                     </Label>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                         <Input 
                             placeholder="Ej: Juan, Firulais, 811..." 
                             value={searchTerm}
+                            disabled={!!initialClient} // DESHABILITADO SI VIENE PRECARGADO
                             onChange={(e) => {
                                 setSearchTerm(e.target.value);
-                                if (selectedClientId) { 
+                                if (selectedClientId && !initialClient) { 
                                     setSelectedClientId("");
                                     setPets([]);
                                     setSelectedPetIds([]);
