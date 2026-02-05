@@ -53,12 +53,13 @@ interface Client {
   pet_names?: string[]; 
 }
 
-// Estructura para manejar múltiples servicios por mascota
+// Estructura para manejar múltiples servicios por mascota CON HORA INDIVIDUAL
 interface PetSelection {
+    startTime: string; // <-- AHORA CADA MASCOTA TIENE SU PROPIA HORA
     mainServiceId: string;
     employeeId: string;
     extras: { 
-        tempId: number; // ID temporal para la UI
+        tempId: number; 
         serviceId: string; 
         employeeId: string; 
     }[];
@@ -280,7 +281,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
 export default function NewAppointmentDialog({ 
   onSuccess 
 }: { 
-  onSuccess: () => void 
+  onSuccess?: () => void 
 }) {
   const supabase = createClient();
   const [open, setOpen] = useState(false);
@@ -298,10 +299,13 @@ export default function NewAppointmentDialog({
   const [selectedClientName, setSelectedClientName] = useState<string>(""); 
   const [selectedPetIds, setSelectedPetIds] = useState<string[]>([]);
   const [date, setDate] = useState<string>("");
-  const [time, setTime] = useState<string>("");
+  
+  // VARIABLE GLOBAL PARA LA HORA REFERENCIAL (Para setear masivamente)
+  const [globalTime, setGlobalTime] = useState<string>("09:00");
+  
   const [notes, setNotes] = useState<string>("");
 
-  // Map: PetID -> Selection Config (Main + Extras)
+  // Map: PetID -> Selection Config (Main + Extras + START TIME)
   const [selections, setSelections] = useState<Record<string, PetSelection>>({});
 
   // Buscador
@@ -330,7 +334,7 @@ export default function NewAppointmentDialog({
         setSelectedPetIds([]);
         setSelections({});
         setDate(format(new Date(), 'yyyy-MM-dd'));
-        setTime("09:00");
+        setGlobalTime("09:00");
         setNotes("");
         setSearchTerm("");
         setClients([]);
@@ -346,24 +350,20 @@ export default function NewAppointmentDialog({
             setIsSearching(true);
             setShowClientResults(true);
             
-            // 1. Buscar en CLIENTES (nombre o telefono)
             const { data: clientsData } = await supabase
                 .from('clients')
                 .select('id, full_name, phone')
                 .or(`full_name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
-                .limit(5);
+                .limit(20);
 
-            // 2. Buscar en MASCOTAS (nombre)
             const { data: petsData } = await supabase
                 .from('pets')
                 .select('client_id, name')
                 .ilike('name', `%${searchTerm}%`)
-                .limit(5);
+                .limit(20);
 
-            // TIPO EXPLICITO PARA EVITAR ERROR TS
             let allClients: Client[] = [...(clientsData || [])].map(c => ({...c, pet_names: []}));
 
-            // 3. Si hubo coincidencias en mascotas, traemos a sus dueños
             if (petsData && petsData.length > 0) {
                 const clientIdsFromPets = petsData.map(p => p.client_id);
                 const { data: petOwners } = await supabase
@@ -372,7 +372,6 @@ export default function NewAppointmentDialog({
                     .in('id', clientIdsFromPets);
                 
                 if (petOwners) {
-                    // Agregamos info de la mascota encontrada al objeto cliente para mostrarla
                     const ownersWithPetInfo = petOwners.map(owner => {
                         const matchedPets = petsData.filter(p => p.client_id === owner.id).map(p => p.name);
                         return { ...owner, pet_names: matchedPets };
@@ -381,7 +380,6 @@ export default function NewAppointmentDialog({
                 }
             }
 
-            // 4. Eliminar duplicados (por ID)
             const uniqueClientsMap = new Map<string, Client>();
             allClients.forEach(c => {
                 if(!uniqueClientsMap.has(c.id)){
@@ -420,7 +418,6 @@ export default function NewAppointmentDialog({
 
   const handleClientSelect = (client: Client) => {
       setSelectedClientId(client.id);
-      setSelectedClientName(client.full_name);
       setSearchTerm(client.full_name); 
       setShowClientResults(false); 
   };
@@ -429,16 +426,40 @@ export default function NewAppointmentDialog({
     setSelectedPetIds(prev => 
         prev.includes(petId) ? prev.filter(id => id !== petId) : [...prev, petId]
     );
-    // Inicializar selección vacía para esta mascota si no existe
+    // Inicializar selección con la HORA GLOBAL
     if (!selections[petId]) {
         setSelections(prev => ({
             ...prev,
-            [petId]: { mainServiceId: "", employeeId: "", extras: [] }
+            [petId]: { 
+                startTime: globalTime, // <-- INICIALIZAMOS CON HORA GLOBAL
+                mainServiceId: "", 
+                employeeId: "", 
+                extras: [] 
+            }
         }));
     }
   };
 
+  // Función para cambiar la hora global y actualizar todas las mascotas
+  const handleGlobalTimeChange = (newTime: string) => {
+      setGlobalTime(newTime);
+      setSelections(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(key => {
+              updated[key].startTime = newTime;
+          });
+          return updated;
+      });
+  };
+
   // --- MANEJO DE SELECCIONES ---
+  const handlePetStartTimeChange = (petId: string, val: string) => {
+      setSelections(prev => ({
+          ...prev,
+          [petId]: { ...prev[petId], startTime: val }
+      }));
+  };
+
   const handleMainServiceChange = (petId: string, val: string) => {
       setSelections(prev => ({
           ...prev,
@@ -495,15 +516,17 @@ export default function NewAppointmentDialog({
 
   const handleSave = async () => {
     if (selectedPetIds.length === 0) return toast.error("Selecciona al menos una mascota");
-    if (!date || !time) return toast.error("Define fecha y hora");
+    if (!date) return toast.error("Define la fecha");
 
     setLoading(true);
     try {
-        const baseDate = new Date(`${date}T${time}:00`); 
-
         for (const petId of selectedPetIds) {
             const config = selections[petId];
             if (!config?.mainServiceId) throw new Error("Falta seleccionar servicio principal para una mascota");
+            if (!config?.startTime) throw new Error("Falta hora de inicio para una mascota");
+
+            // BASE DATE ESPECÍFICA PARA CADA MASCOTA
+            const baseDate = new Date(`${date}T${config.startTime}:00`); 
 
             // 1. Crear Cita
             const { data: appt, error: apptError } = await supabase.from('appointments').insert({
@@ -531,7 +554,7 @@ export default function NewAppointmentDialog({
             });
 
             // 3. Insertar Servicios Extras (Encadenados en tiempo)
-            let currentStartTime = mainEndTime; // El extra empieza cuando termina el principal
+            let currentStartTime = mainEndTime; 
             
             for (const extra of config.extras) {
                 if (!extra.serviceId) continue;
@@ -549,13 +572,13 @@ export default function NewAppointmentDialog({
                     resource_type: 'table'
                 });
 
-                currentStartTime = extraEndTime; // Actualizar inicio para el siguiente extra
+                currentStartTime = extraEndTime;
             }
         }
 
         toast.success("Citas creadas exitosamente");
         setOpen(false);
-        onSuccess();
+        if (onSuccess) onSuccess(); 
     } catch (e: any) {
         toast.error(e.message || "Error al crear citas");
     } finally {
@@ -595,7 +618,6 @@ export default function NewAppointmentDialog({
                                 setSearchTerm(e.target.value);
                                 if (selectedClientId) { 
                                     setSelectedClientId("");
-                                    setSelectedClientName("");
                                     setPets([]);
                                     setSelectedPetIds([]);
                                 }
@@ -693,15 +715,16 @@ export default function NewAppointmentDialog({
 
           {step === 2 && (
             <div className="flex flex-col h-full gap-6 animate-in slide-in-from-right-4 fade-in duration-300">
-                {/* FECHA Y HORA */}
+                {/* CONFIGURACIÓN GLOBAL */}
                 <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <div className="space-y-1.5">
                         <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><CalendarPlus size={12}/> Fecha</Label>
                         <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9 text-sm border-slate-200 bg-white focus:ring-0"/>
                     </div>
                     <div className="space-y-1.5">
-                        <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Clock size={12}/> Hora Inicio</Label>
-                        <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="h-9 text-sm border-slate-200 bg-white focus:ring-0"/>
+                        <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Clock size={12}/> Hora Referencia</Label>
+                        <Input type="time" value={globalTime} onChange={e => handleGlobalTimeChange(e.target.value)} className="h-9 text-sm border-slate-200 bg-white focus:ring-0"/>
+                        <span className="text-[10px] text-slate-400">Actualiza todas las mascotas abajo</span>
                     </div>
                 </div>
 
@@ -710,20 +733,31 @@ export default function NewAppointmentDialog({
                     <div className="space-y-6">
                         {selectedPetIds.map(petId => {
                             const pet = pets.find(p => p.id === petId);
-                            const config = selections[petId] || { mainServiceId: "", employeeId: "", extras: [] };
+                            const config = selections[petId] || { mainServiceId: "", employeeId: "", extras: [], startTime: globalTime };
                             const selectedService = services.find(s => String(s.id) === String(config.mainServiceId));
                             const catInfo = getCategoryInfo(selectedService?.category);
 
                             return (
                                 <div key={petId} className={cn("bg-white border rounded-xl p-4 shadow-sm relative overflow-hidden transition-all", selectedService ? `border-l-4 ${catInfo.border.replace('border', 'border-l')}` : "border-slate-200")}>
-                                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-50">
-                                        <Dog size={14} className="text-slate-400"/>
-                                        <span className="font-bold text-sm text-slate-800">{pet?.name}</span>
-                                        <span className="text-slate-300 mx-1">|</span>
-                                        <span className="text-xs text-slate-500">{pet?.breed}</span>
-                                        <Badge variant="outline" className="ml-auto text-[9px] font-normal border-slate-200 text-slate-400 flex items-center gap-1">
-                                            <Ruler size={10}/> {pet?.size}
-                                        </Badge>
+                                    <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-50">
+                                        <div className="flex items-center gap-2">
+                                            <Dog size={14} className="text-slate-400"/>
+                                            <span className="font-bold text-sm text-slate-800">{pet?.name}</span>
+                                            <span className="text-slate-300 mx-1">|</span>
+                                            <Badge variant="outline" className="text-[9px] font-normal border-slate-200 text-slate-400">
+                                                {pet?.size}
+                                            </Badge>
+                                        </div>
+                                        {/* HORA INDIVIDUAL */}
+                                        <div className="flex items-center gap-2">
+                                            <Label className="text-[10px] text-slate-400 uppercase font-bold">Inicio:</Label>
+                                            <Input 
+                                                type="time" 
+                                                value={config.startTime} 
+                                                onChange={(e) => handlePetStartTimeChange(petId, e.target.value)}
+                                                className="h-7 w-24 text-xs"
+                                            />
+                                        </div>
                                     </div>
                                     
                                     {/* MAIN SERVICE */}
