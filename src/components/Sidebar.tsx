@@ -14,10 +14,13 @@ import {
   X,
   CalendarDays, 
   Scissors,     
-  Users         
+  Users,
+  ShieldCheck,
+  CalendarPlus
 } from 'lucide-react'; 
 import { cn } from '@/lib/utils';
 import AddClientDialog from '@/components/AddClientDialog'; 
+import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
 
 interface SidebarProps {
   isDesktopCollapsed: boolean;
@@ -34,6 +37,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const [isClientModalOpen, setClientModalOpen] = useState(false);
+  const [isAppointmentModalOpen, setAppointmentModalOpen] = useState(false);
 
   if (pathname?.startsWith('/checkin')) return null;
 
@@ -42,11 +46,11 @@ export default function Sidebar({
     { name: 'Calendario', icon: CalendarDays, href: '/appointments' },
     { name: 'Servicios', icon: Scissors, href: '/admin/services' },
     { name: 'Equipo', icon: Users, href: '/admin/staff' },
+    { name: 'Admin', icon: ShieldCheck, href: '/admin/users' },
   ];
 
   return (
     <>
-      {/* OVERLAY MOVIL */}
       <div 
         className={cn(
           "fixed inset-0 bg-slate-900/60 z-40 md:hidden transition-opacity backdrop-blur-sm",
@@ -55,7 +59,6 @@ export default function Sidebar({
         onClick={closeMobileMenu}
       />
 
-      {/* SIDEBAR */}
       <aside 
         className={cn(
           "fixed md:sticky top-0 left-0 z-50 h-screen bg-slate-950 text-slate-300 border-r border-slate-800 transition-all duration-300 flex flex-col shadow-2xl",
@@ -68,12 +71,11 @@ export default function Sidebar({
           {!isDesktopCollapsed && (
              <div className="flex items-center gap-3 animate-in fade-in duration-300">
                <div className="relative w-10 h-10">
-                 {/* CORRECCIÓN AQUÍ: Ruta actualizada a Logo500x500.png */}
                  <Image 
                    src="/Logo500x500.png" 
                    alt="Tail Society" 
                    fill 
-                   className="object-contain rounded-full" // Agregué rounded-full por si acaso es circular
+                   className="object-contain rounded-full"
                    priority
                  />
                </div>
@@ -84,7 +86,6 @@ export default function Sidebar({
           {isDesktopCollapsed && (
             <div className="w-full flex justify-center">
                <div className="relative w-10 h-10">
-                 {/* CORRECCIÓN AQUÍ TAMBIÉN */}
                  <Image 
                     src="/Logo500x500.png" 
                     alt="TS" 
@@ -110,6 +111,19 @@ export default function Sidebar({
         {/* NAVIGATION */}
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 custom-scrollbar">
           
+          {/* BOTÓN NUEVA CITA */}
+          <button 
+            onClick={() => setAppointmentModalOpen(true)}
+            className={cn(
+              "flex items-center gap-3 w-full bg-slate-100 hover:bg-white text-slate-900 transition-all shadow-lg shadow-white/5 mb-3 group relative overflow-hidden ring-1 ring-slate-200",
+              isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
+            )}
+          >
+            <CalendarPlus size={isDesktopCollapsed ? 24 : 20} className={cn("shrink-0 transition-transform text-purple-600", !isDesktopCollapsed && "group-hover:scale-110")} />
+            {!isDesktopCollapsed && <span className="font-bold text-sm">Nueva Cita</span>}
+          </button>
+
+          {/* BOTÓN NUEVO CLIENTE */}
           <button 
             onClick={() => setClientModalOpen(true)}
             className={cn(
@@ -180,9 +194,16 @@ export default function Sidebar({
           </Link>
         </nav>
 
+        {/* MODALES */}
         <AddClientDialog 
           isOpen={isClientModalOpen} 
           onOpenChange={setClientModalOpen} 
+        />
+        
+        {/* 🔥 AQUÍ ESTABA EL FALTANTE: Componente del modal de cita */}
+        <NewAppointmentDialog 
+          open={isAppointmentModalOpen} 
+          onOpenChange={setAppointmentModalOpen}
         />
 
         <div className="p-4 border-t border-slate-800 bg-slate-950/30 shrink-0">
