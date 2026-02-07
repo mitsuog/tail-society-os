@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from "sonner";
 import AppointmentDetailDialog from '@/components/appointments/AppointmentDetailDialog';
+import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
 
 // --- Interfaces ---
 interface Employee {
@@ -58,6 +59,16 @@ interface ResizingState {
     startYTime: number; 
 }
 
+interface ContextMenuState {
+    visible: boolean;
+    x: number;
+    y: number;
+    date: Date;
+    startTime: Date;
+    employeeId?: string;
+    colId: string;
+}
+
 const ROLE_TRANSLATIONS: Record<string, string> = {
     stylist: 'Estilista',
     bather: 'Bañador',
@@ -78,7 +89,7 @@ const getServiceCategoryStyles = (category: string = 'general') => {
 const getInitials = (first: string, last?: string) => `${first?.charAt(0) || ''}${last?.charAt(0) || ''}`.toUpperCase();
 const stringToColor = (str: string) => { let hash = 0; for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); } return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`; };
 
-// --- Tooltip ---
+// --- Tooltip Component ---
 const AppointmentTooltip = ({ data, position, userRole }: { data: any, position: { x: number, y: number } | null, userRole: string }) => {
     if (!data || !position) return null;
     const style: React.CSSProperties = { top: position.y + 10, left: position.x + 10, position: 'fixed', zIndex: 9999 };
@@ -113,6 +124,39 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
     );
 };
 
+// --- Context Menu Component ---
+const QuickScheduleMenu = ({ contextMenu, onClose, onSchedule }: { contextMenu: ContextMenuState, onClose: () => void, onSchedule: () => void }) => {
+    let left = contextMenu.x;
+    let top = contextMenu.y;
+    if (typeof window !== 'undefined') {
+        if (left > window.innerWidth - 180) left = left - 180;
+        if (top > window.innerHeight - 100) top = top - 100;
+    }
+
+    return createPortal(
+        <>
+            <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+            <div 
+                className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-2 w-48 animate-in fade-in zoom-in-95 duration-100"
+                style={{ top, left }}
+            >
+                <div className="text-xs font-semibold text-slate-500 mb-2 px-2 py-1 border-b border-slate-100">
+                    {format(contextMenu.startTime, 'HH:mm')} - {format(addMinutes(contextMenu.startTime, 30), 'HH:mm')}
+                </div>
+                <Button 
+                    size="sm" 
+                    variant="default" 
+                    className="w-full justify-start text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={onSchedule}
+                >
+                    <Plus size={14} className="mr-2"/> Agendar Cita
+                </Button>
+            </div>
+        </>,
+        document.body
+    );
+};
+
 export default function CalendarBoard({ currentDate, view, employees, appointments = [], userRole = 'employee' }: CalendarBoardProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -123,6 +167,19 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const PIXELS_PER_MINUTE = 1.8; 
   const SNAP_MINUTES = 15; 
 
+  const columns = useMemo<ColumnData[]>(() => {
+    if (view === 'day') {
+      return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
+    } else {
+      let daysToShow = view === '3day' ? 3 : 7;
+      return Array.from({ length: daysToShow }).map((_, i) => {
+        const date = addDays(currentDate, i);
+        return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
+      });
+    }
+  }, [view, currentDate, employees]);
+
+  // Estados
   const [localAppts, setLocalAppts] = useState<any[]>(appointments);
   const [schedules, setSchedules] = useState<any[]>([]); 
   const [absences, setAbsences] = useState<any[]>([]); 
@@ -134,12 +191,17 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const MIN_DRAG_DISTANCE = 5; 
   const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
   const [resizing, setResizing] = useState<ResizingState | null>(null);
+  const [hoveredResizeId, setHoveredResizeId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); 
   const [selectedAppt, setSelectedAppt] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [tooltipData, setTooltipData] = useState<any | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{x:number, y:number} | null>(null);
   const [hoveredClient, setHoveredClient] = useState<string | null>(null);
+  
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [newApptData, setNewApptData] = useState<{ employeeId?: string; date: Date; startTime: Date } | null>(null);
   
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const ghostRef = useRef<DragGhost | null>(null);
@@ -161,20 +223,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       handleNavigate('date', newDate);
   };
 
-  // --- 1. DEFINICIÓN DE COLUMNAS (MOVIDO AL PRINCIPIO PARA EVITAR ERRORES DE REFERENCIA) ---
-  const columns = useMemo<ColumnData[]>(() => {
-    if (view === 'day') {
-      return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
-    } else {
-      let daysToShow = view === '3day' ? 3 : 7;
-      return Array.from({ length: daysToShow }).map((_, i) => {
-        const date = addDays(currentDate, i);
-        return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
-      });
-    }
-  }, [view, currentDate, employees]);
-
-  // --- Data Fetching ---
   useEffect(() => { setLocalAppts(appointments); }, [appointments]);
 
   useEffect(() => {
@@ -236,6 +284,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
               }
           }
           setResizing(null);
+          setHoveredResizeId(null);
       };
 
       window.addEventListener('mousemove', handleMove);
@@ -254,7 +303,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, appt: any) => {
       if (!canEdit) return;
       e.stopPropagation();
-      e.preventDefault(); 
+      if (e.cancelable && 'touches' in e) e.preventDefault();
       
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       const start = parseISO(appt.start_time);
@@ -269,19 +318,20 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       });
       setTooltipData(null); 
       setIsDragging(null);
+      setContextMenu(null);
   };
 
-  // --- EVENTOS BÁSICOS (Definidos antes para evitar errores de inicialización) ---
   const handleApptClick = (appt: any) => { 
       if (!isDragging && !resizing) { 
           setTooltipData(null); 
           setSelectedAppt(appt); 
           setIsDetailOpen(true); 
+          setContextMenu(null);
       }
   };
 
   const handleMouseEnter = (e: React.MouseEvent, appt: any) => { 
-      if (!isDragging && !resizing) { 
+      if (!isDragging && !resizing && !contextMenu) { 
           const cid = appt.appointment?.client?.id; 
           if(cid) setHoveredClient(cid); 
           tooltipTimeoutRef.current = setTimeout(() => { 
@@ -307,55 +357,24 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     } catch (e: any) { toast.error(e.message); setLocalAppts([...appointments]); }
   };
 
-  // --- LOGICA DE TOUCH/DRAG (Ahora 'columns' y 'handleApptClick' ya existen) ---
-  const handleTouchMove = useCallback((e: TouchEvent, appt: any, col: ColumnData, colIndex: number) => {
-    if (!isDragging || !touchDragStart) return;
-    const touch = e.touches[0];
-    const distance = Math.sqrt(Math.pow(touch.clientX - touchDragStart.x, 2) + Math.pow(touch.clientY - touchDragStart.y, 2));
-    
-    if (distance > MIN_DRAG_DISTANCE && !isDragStarted) {
-        setIsDragStarted(true);
-        e.preventDefault(); 
-    }
-    if (!isDragStarted) return;
-    dragDistanceRef.current = distance;
-    
-    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-    const columnElement = elements.find(el => el.hasAttribute('data-column-id'));
-    
-    if (columnElement) {
-        const colId = columnElement.getAttribute('data-column-id');
-        //const rect = columnElement.getBoundingClientRect(); // No se usa por ahora pero util para debug
-        const column = columns.find(c => c.id === colId);
-        if (column) {
-            const rect = columnElement.getBoundingClientRect();
-            const snappedMinutes = Math.round(Math.max(0, (touch.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
-            const baseDate = column.type === 'date' ? column.data : currentDate;
-            const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
-            const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
-            
-            const newGhost = { apptId: appt.id, colId: column.id, colIndex: columns.findIndex(c => c.id === column.id), startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
-            setDragGhost(newGhost);
-            ghostRef.current = newGhost;
-        }
-    }
-  }, [isDragging, touchDragStart, isDragStarted, columns, currentDate, PIXELS_PER_MINUTE, SNAP_MINUTES, START_HOUR]);
+  const handleEmptySlotClick = (e: React.MouseEvent, col: ColumnData) => {
+      if (isDragging || resizing || !canEdit) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickY = e.clientY - rect.top;
+      const snappedMinutes = Math.round(Math.max(0, clickY / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
+      const baseDate = col.type === 'date' ? col.data : currentDate;
+      const startTime = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
 
-  const handleTouchEnd = useCallback((e: TouchEvent, appt: any) => {
-    if (!isDragging) return;
-    e.preventDefault();
-    if (dragDistanceRef.current < MIN_DRAG_DISTANCE) {
-        setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
-        handleApptClick(appt);
-        return;
-    }
-    const final = ghostRef.current;
-    if (final) {
-        setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a));
-        updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined);
-    }
-    setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
-  }, [isDragging, view, updateAppointment]);
+      setContextMenu({
+          visible: true,
+          x: e.clientX,
+          y: e.clientY,
+          date: baseDate,
+          startTime: startTime,
+          employeeId: col.type === 'employee' ? col.id : undefined,
+          colId: col.id
+      });
+  };
 
   const handleDragStart = (e: React.DragEvent | React.TouchEvent, appt: any) => { 
       if (!canEdit) return;
@@ -366,27 +385,23 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           return;
       }
 
-      e.stopPropagation();
       setTooltipData(null);
+      setContextMenu(null);
       dragDistanceRef.current = 0;
       
-      if ('dataTransfer' in e) {
+      if ('dataTransfer' in e) { 
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData("apptId", appt.id);
-          
-          const dragImg = document.createElement('div');
-          dragImg.style.position = 'absolute';
-          dragImg.style.top = '-1000px';
-          dragImg.className = 'bg-blue-100 border-2 border-blue-400 rounded-lg p-2 shadow-lg';
-          dragImg.innerHTML = `<div class="font-bold text-sm text-blue-700">${appt.appointment?.pet?.name}</div>`;
-          document.body.appendChild(dragImg);
-          e.dataTransfer.setDragImage(dragImg, 50, 25);
-          setTimeout(() => document.body.removeChild(dragImg), 0);
+          try {
+              const dragImg = document.createElement('div');
+              dragImg.style.position = 'absolute'; dragImg.style.top = '-1000px';
+              document.body.appendChild(dragImg);
+              e.dataTransfer.setDragImage(dragImg, 0, 0);
+              setTimeout(() => { if(document.body.contains(dragImg)) document.body.removeChild(dragImg); }, 50);
+          } catch(err) {}
           
           setTimeout(() => setIsDragging(appt.id), 0);
-      }
-      
-      if ('touches' in e) {
+      } else if ('touches' in e) { 
           const touch = e.touches[0];
           setTouchDragStart({ x: touch.clientX, y: touch.clientY, time: Date.now() });
           setIsDragging(appt.id);
@@ -412,23 +427,62 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     }
   };
   
-  const handleDrop = async (e: React.DragEvent) => { 
+  const handleDrop = (e: React.DragEvent) => { 
       e.preventDefault(); e.stopPropagation(); 
       const final = ghostRef.current; 
       if (final) { 
-          setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { 
-              ...a, 
-              start_time: final.startTime.toISOString(), 
-              end_time: final.endTime.toISOString(), 
-              employee_id: view === 'day' ? final.colId : a.employee_id 
-          } : a)); 
-          
-          updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined);
+          setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a)); 
+          updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined); 
       } 
-      ghostRef.current = null; 
-      setIsDragging(null); 
-      setDragGhost(null); 
+      ghostRef.current = null; setIsDragging(null); setDragGhost(null); 
   };
+
+  const handleTouchMove = useCallback((e: TouchEvent, appt: any, col: ColumnData, colIndex: number) => {
+    if (!isDragging || !touchDragStart) return;
+    const touch = e.touches[0];
+    const distance = Math.sqrt(Math.pow(touch.clientX - touchDragStart.x, 2) + Math.pow(touch.clientY - touchDragStart.y, 2));
+    
+    if (distance > MIN_DRAG_DISTANCE && !isDragStarted) { setIsDragStarted(true); e.preventDefault(); }
+    if (!isDragStarted) return;
+    dragDistanceRef.current = distance;
+    
+    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
+    const columnElement = elements.find(el => el.hasAttribute('data-column-id'));
+    if (columnElement) {
+        const colId = columnElement.getAttribute('data-column-id');
+        const column = columns.find(c => c.id === colId);
+        if (column) {
+            const rect = columnElement.getBoundingClientRect();
+            const snappedMinutes = Math.round(Math.max(0, (touch.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
+            const baseDate = column.type === 'date' ? column.data : currentDate;
+            const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
+            const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
+            const newGhost = { apptId: appt.id, colId: column.id, colIndex: columns.findIndex(c => c.id === column.id), startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
+            setDragGhost(newGhost);
+            ghostRef.current = newGhost;
+        }
+    }
+  }, [isDragging, touchDragStart, isDragStarted, columns, currentDate, PIXELS_PER_MINUTE, SNAP_MINUTES, START_HOUR]);
+
+  const handleTouchEnd = useCallback((e: TouchEvent, appt: any) => {
+    if (!isDragging) return;
+    if (e.cancelable) e.preventDefault();
+    
+    if (dragDistanceRef.current < MIN_DRAG_DISTANCE) {
+        setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
+        handleApptClick(appt);
+        return;
+    }
+    const final = ghostRef.current;
+    if (final) {
+        setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a));
+        updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined);
+    }
+    setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
+  }, [isDragging, view, updateAppointment]);
+
+  const handleReactTouchMove = useCallback((e: React.TouchEvent, appt: any, col: ColumnData, colIndex: number) => { handleTouchMove(e.nativeEvent, appt, col, colIndex); }, [handleTouchMove]);
+  const handleReactTouchEnd = useCallback((e: React.TouchEvent, appt: any) => { handleTouchEnd(e.nativeEvent, appt); }, [handleTouchEnd]);
 
   const getAppointmentsForColumn = useCallback((col: ColumnData) => {
     const colAppts = localAppts.filter(appt => {
@@ -436,7 +490,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       if (view === 'day') return appt.employee_id === col.id && isSameDay(apptStart, currentDate);
       else return format(apptStart, 'yyyy-MM-dd') === col.id;
     });
-    
     const items = colAppts.map(appt => {
       const start = parseISO(appt.start_time);
       const end = parseISO(appt.end_time);
@@ -447,7 +500,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       }
       return { ...appt, _start: start.getTime(), _end: end.getTime(), top, height };
     });
-
     const lanes: any[][] = [];
     items.sort((a,b) => a._start - b._start);
     items.forEach(item => {
@@ -466,30 +518,46 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     return slots;
   }, [currentDate, START_HOUR, END_HOUR]);
 
-  // --- RENDERING AUXILIAR ---
+  // --- CALCULO UNIFICADO DE DATOS (Día, 3Días, Semana) ---
   const calculateColumnData = useCallback((col: ColumnData) => {
       let colAppointments = [];
       let capacityMinutes = 0;
       const checkDate = col.type === 'date' ? col.data : currentDate;
       const holiday = holidays.find(h => h.date === format(checkDate, 'yyyy-MM-dd'));
       const isHoliday = !!holiday;
+
       if (col.type === 'employee') {
+          // Lógica de Vista DÍA (Por Empleado)
           colAppointments = localAppts.filter(a => a.employee_id === col.id && isSameDay(parseISO(a.start_time), currentDate));
+          
           if (!isHoliday) { 
               const empSchedule = schedules.find(s => s.employee_id === col.id && s.day_of_week === getDay(currentDate));
-              if (empSchedule && empSchedule.is_working) {
+              const isAbsent = absences.some(abs => 
+                  abs.employee_id === col.id && 
+                  isWithinInterval(startOfDay(currentDate), { start: startOfDay(parseISO(abs.start_date)), end: endOfDay(parseISO(abs.end_date)) })
+              );
+
+              if (empSchedule && empSchedule.is_working && !isAbsent) {
                   const [hStart, mStart] = empSchedule.start_time.split(':').map(Number);
                   const [hEnd, mEnd] = empSchedule.end_time.split(':').map(Number);
                   capacityMinutes = (hEnd * 60 + mEnd) - (hStart * 60 + mStart);
               }
           }
       } else { 
+          // Lógica de Vista FECHAS (3 Días / Semana)
           colAppointments = localAppts.filter(a => isSameDay(parseISO(a.start_time), col.data));
+          
           if (!isHoliday) {
               const dayOfWeek = getDay(col.data);
               employees.forEach(emp => {
                   const empSchedule = schedules.find(s => s.employee_id === emp.id && s.day_of_week === dayOfWeek);
-                  if (empSchedule && empSchedule.is_working) {
+                  // REVISAR AUSENCIA PARA CADA EMPLEADO EN ESA FECHA
+                  const isAbsent = absences.some(abs => 
+                      abs.employee_id === emp.id && 
+                      isWithinInterval(startOfDay(col.data), { start: startOfDay(parseISO(abs.start_date)), end: endOfDay(parseISO(abs.end_date)) })
+                  );
+
+                  if (empSchedule && empSchedule.is_working && !isAbsent) {
                       const [hStart, mStart] = empSchedule.start_time.split(':').map(Number);
                       const [hEnd, mEnd] = empSchedule.end_time.split(':').map(Number);
                       capacityMinutes += (hEnd * 60 + mEnd) - (hStart * 60 + mStart);
@@ -497,33 +565,60 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
               });
           }
       }
+
       const bookedMinutes = colAppointments.reduce((acc, curr) => {
           if (resizing && resizing.apptId === curr.id) return acc + resizing.newDuration;
           const start = parseISO(curr.start_time);
           const end = parseISO(curr.end_time);
           return acc + differenceInMinutes(end, start);
       }, 0);
-      return { colAppointments, capacityMinutes, bookedMinutes };
-  }, [localAppts, schedules, currentDate, employees, resizing, holidays]);
 
-  const globalStats = useMemo(() => {
-      if (view === 'month') return null; 
+      return { colAppointments, capacityMinutes, bookedMinutes };
+  }, [localAppts, schedules, currentDate, employees, resizing, holidays, absences]);
+
+  // --- CALCULO ESTADISTICAS (VISTA MENSUAL) ---
+  const getDayStats = useCallback((date: Date) => {
       let totalCapacity = 0;
-      let totalBooked = 0;
-      const allUniquePets = new Set();
-      columns.forEach(col => {
-          const { colAppointments, capacityMinutes, bookedMinutes } = calculateColumnData(col);
-          totalCapacity += capacityMinutes;
-          totalBooked += bookedMinutes;
-          colAppointments.forEach(appt => { if (appt.appointment?.pet?.id) allUniquePets.add(appt.appointment.pet.id); });
-      });
-      const percentage = totalCapacity > 0 ? Math.round((totalBooked / totalCapacity) * 100) : 0;
-      let color = 'bg-red-500';
-      let textColor = 'text-red-600';
-      if (percentage >= 85) { color = 'bg-emerald-500'; textColor = 'text-emerald-600'; }
-      else if (percentage >= 65) { color = 'bg-amber-500'; textColor = 'text-amber-600'; }
-      return { percentage, color, textColor, totalPets: allUniquePets.size };
-  }, [columns, calculateColumnData, view]);
+      const dayOfWeek = getDay(date);
+      const isHoliday = holidays.some(h => h.date === format(date, 'yyyy-MM-dd'));
+
+      if (!isHoliday) {
+          employees.forEach(emp => {
+              const schedule = schedules.find(s => s.employee_id === emp.id && s.day_of_week === dayOfWeek);
+              const isAbsent = absences.some(abs => 
+                  abs.employee_id === emp.id && 
+                  isWithinInterval(startOfDay(date), { start: startOfDay(parseISO(abs.start_date)), end: endOfDay(parseISO(abs.end_date)) })
+              );
+
+              if (schedule && schedule.is_working && !isAbsent) {
+                  const [hStart, mStart] = schedule.start_time.split(':').map(Number);
+                  const [hEnd, mEnd] = schedule.end_time.split(':').map(Number);
+                  const minutes = (hEnd * 60 + mEnd) - (hStart * 60 + mStart);
+                  totalCapacity += minutes;
+              }
+          });
+      }
+
+      const dayAppts = localAppts.filter(a => isSameDay(parseISO(a.start_time), date));
+      const bookedMinutes = dayAppts.reduce((acc, curr) => {
+          const start = parseISO(curr.start_time);
+          const end = parseISO(curr.end_time);
+          return acc + differenceInMinutes(end, start);
+      }, 0);
+
+      const percentage = totalCapacity > 0 ? Math.round((bookedMinutes / totalCapacity) * 100) : 0;
+      
+      let color = 'bg-slate-200';
+      let textColor = 'text-slate-400';
+
+      if (totalCapacity > 0) {
+          if (percentage >= 85) { color = 'bg-emerald-500'; textColor = 'text-emerald-600'; }
+          else if (percentage >= 65) { color = 'bg-amber-500'; textColor = 'text-amber-600'; }
+          else { color = 'bg-blue-500'; textColor = 'text-blue-600'; }
+      }
+
+      return { percentage: Math.min(percentage, 100), color, textColor, count: dayAppts.length, totalCapacity };
+  }, [employees, schedules, localAppts, absences, holidays]);
 
   const getColumnStats = useCallback((col: ColumnData) => {
       const { colAppointments, capacityMinutes, bookedMinutes } = calculateColumnData(col);
@@ -531,18 +626,15 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const uniquePets = new Set();
       colAppointments.forEach(appt => { if (appt.appointment?.pet?.id) uniquePets.add(appt.appointment.pet.id); });
       const count = uniquePets.size;
-      let barColor = 'bg-red-500'; 
-      if (percentage >= 85) barColor = 'bg-emerald-500'; 
-      else if (percentage >= 65) barColor = 'bg-amber-500'; 
+      let barColor = 'bg-blue-500'; 
+      if (percentage >= 85) barColor = 'bg-emerald-500'; else if (percentage >= 65) barColor = 'bg-amber-500'; 
       return { count, percentage, barColor };
   }, [calculateColumnData]);
 
   const monthDays = useMemo(() => {
       if (view !== 'month') return [];
-      const monthStart = startOfMonth(currentDate);
-      const monthEnd = endOfMonth(monthStart);
-      const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-      const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+      const monthStart = startOfMonth(currentDate); const monthEnd = endOfMonth(monthStart);
+      const startDate = startOfWeek(monthStart, { weekStartsOn: 1 }); const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
       return eachDayOfInterval({ start: startDate, end: endDate });
   }, [currentDate, view]);
 
@@ -553,12 +645,10 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     if (!empSchedule || !empSchedule.is_working) return [{ top: 0, height: TOTAL_HEIGHT }];
     const blocks = [];
     const [hStart, mStart] = empSchedule.start_time.split(':').map(Number);
-    const empStartMins = hStart * 60 + mStart;
-    const globalStartMins = START_HOUR * 60;
+    const empStartMins = hStart * 60 + mStart; const globalStartMins = START_HOUR * 60;
     if (empStartMins > globalStartMins) blocks.push({ top: 0, height: (empStartMins - globalStartMins) * PIXELS_PER_MINUTE });
     const [hEnd, mEnd] = empSchedule.end_time.split(':').map(Number);
-    const empEndMins = hEnd * 60 + mEnd;
-    const minutesFromGlobalStart = empEndMins - globalStartMins;
+    const empEndMins = hEnd * 60 + mEnd; const minutesFromGlobalStart = empEndMins - globalStartMins;
     const topOfBottomBlock = minutesFromGlobalStart * PIXELS_PER_MINUTE;
     if (topOfBottomBlock < TOTAL_HEIGHT) blocks.push({ top: topOfBottomBlock, height: TOTAL_HEIGHT - topOfBottomBlock });
     return blocks;
@@ -568,13 +658,10 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const TOTAL_HEIGHT = (END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE;
       const checkDate = col.type === 'date' ? col.data : currentDate;
       const holiday = holidays.find(h => h.date === format(checkDate, 'yyyy-MM-dd'));
-      if (holiday) {
-          return { height: TOTAL_HEIGHT, bgColor: 'bg-emerald-50', stripeColor: '#d1fae5', label: 'Día Festivo', note: holiday.name, icon: Flag, isHoliday: true };
-      }
+      if (holiday) return { height: TOTAL_HEIGHT, bgColor: 'bg-emerald-50', stripeColor: '#d1fae5', label: 'Día Festivo', note: holiday.name, icon: Flag, isHoliday: true };
       if (col.type === 'employee') {
           const activeAbsence = absences.find(abs => {
-              const rangeStart = parseISO(abs.start_date);
-              const rangeEnd = parseISO(abs.end_date);
+              const rangeStart = parseISO(abs.start_date); const rangeEnd = parseISO(abs.end_date);
               return abs.employee_id === col.id && isWithinInterval(startOfDay(currentDate), { start: startOfDay(rangeStart), end: endOfDay(rangeEnd) });
           });
           if (activeAbsence) {
@@ -618,11 +705,21 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
             <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={handleRefresh}><Filter size={16} /></Button>
-                {canEdit && <Button className="bg-blue-600 text-white gap-2"><Plus size={16}/> Nueva Cita</Button>}
+                {canEdit && (
+                    <Button 
+                        className="bg-blue-600 text-white gap-2" 
+                        onClick={() => {
+                            setNewApptData({ date: currentDate, startTime: new Date() });
+                            setIsCreateDialogOpen(true);
+                        }}
+                    >
+                        <Plus size={16}/> Nueva Cita
+                    </Button>
+                )}
             </div>
         </div>
 
-        <div className="flex-1 overflow-auto relative w-full h-full bg-slate-50/30">
+        <div className="flex-1 overflow-auto relative w-full h-full bg-slate-50/30" onClick={() => setContextMenu(null)}>
             {view === 'month' ? (
                 <div className="flex flex-col h-full bg-white p-4">
                     <div className="grid grid-cols-7 mb-2 border-b border-slate-200 pb-2">
@@ -633,21 +730,37 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     <div className="grid grid-cols-7 flex-1 auto-rows-fr gap-1">
                         {monthDays.map(day => {
                             const isCurrentMonth = isSameMonth(day, currentDate);
-                            const dayAppts = localAppts.filter(a => isSameDay(parseISO(a.start_time), day));
+                            const stats = getDayStats(day); 
                             const isToday = isSameDay(day, new Date());
                             const holiday = holidays.find(h => h.date === format(day, 'yyyy-MM-dd'));
-                            
                             return (
-                                <div key={day.toISOString()} onClick={() => { handleNavigate('date', day); handleNavigate('view', 'day'); }} className={cn("border rounded-lg p-2 flex flex-col gap-1 cursor-pointer hover:border-slate-400 transition-colors relative min-h-[80px]", isCurrentMonth ? "bg-white border-slate-100" : "bg-slate-50/50 border-slate-50 text-slate-400", isToday && "ring-2 ring-blue-500 ring-offset-2 z-10", holiday && "bg-emerald-50 border-emerald-100")}>
-                                    <div className="flex justify-between items-start">
+                                <div key={day.toISOString()} onClick={() => { handleNavigate('date', day); handleNavigate('view', 'day'); }} className={cn("border rounded-lg p-2 flex flex-col justify-between cursor-pointer hover:border-slate-400 transition-colors relative min-h-[100px]", isCurrentMonth ? "bg-white border-slate-100" : "bg-slate-50/50 border-slate-50 text-slate-400", isToday && "ring-2 ring-blue-500 ring-offset-2 z-10", holiday && "bg-emerald-50 border-emerald-100")}>
+                                    <div className="flex justify-between items-start mb-1">
                                         <span className={cn("text-sm font-medium h-6 w-6 flex items-center justify-center rounded-full", isToday ? "bg-blue-600 text-white" : "text-slate-700")}>{format(day, 'd')}</span>
-                                        {holiday && <div className="flex justify-end"><Flag size={12} className="text-emerald-600 mr-1 mt-1"/><span className="text-[9px] font-bold text-emerald-700 leading-tight max-w-[60px] text-right">{holiday.name}</span></div>}
-                                        {!holiday && dayAppts.length > 0 && <span className="text-[10px] font-bold text-slate-400">{dayAppts.length} citas</span>}
+                                        {holiday && <div className="flex justify-end"><Flag size={12} className="text-emerald-600 mr-1 mt-1"/></div>}
+                                        {!holiday && stats.count > 0 && <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 rounded-full">{stats.count}</span>}
                                     </div>
-                                    <div className="flex flex-wrap gap-1 mt-auto">
-                                        {dayAppts.slice(0, 6).map((appt, i) => (<div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: stringToColor(appt.appointment?.client?.full_name || '') }}></div>))}
-                                        {dayAppts.length > 6 && <span className="text-[9px] text-slate-400">+</span>}
+                                    <div className="flex-1 flex flex-col gap-1">
+                                        {holiday ? (
+                                            <span className="text-[10px] font-bold text-emerald-700 leading-tight text-center mt-2">{holiday.name}</span>
+                                        ) : (
+                                            <div className="flex flex-wrap gap-1 content-start">
+                                                {localAppts.filter(a => isSameDay(parseISO(a.start_time), day)).slice(0, 5).map((appt, i) => (<div key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: stringToColor(appt.appointment?.client?.full_name || '') }}></div>))}
+                                            </div>
+                                        )}
                                     </div>
+                                    {/* BARRA DE PROGRESO MENSUAL - SE MUESTRA SIEMPRE (AUNQUE SEA 0%) */}
+                                    {!holiday && (
+                                        <div className="mt-2 w-full">
+                                            <div className="flex justify-between items-end mb-0.5">
+                                                <span className="text-[9px] text-slate-400 font-medium">Ocupación</span>
+                                                <span className={cn("text-[9px] font-bold", stats.textColor)}>{stats.percentage}%</span>
+                                            </div>
+                                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                <div className={cn("h-full rounded-full transition-all duration-500", stats.color)} style={{ width: `${stats.percentage}%` }}></div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -656,12 +769,12 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
             ) : (
                 <div className="flex h-full overflow-hidden flex-col">
                     <div className="flex sticky top-0 z-40 bg-white min-w-max border-b border-slate-200 shadow-sm w-full">
-                        <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[80px]"></div>
+                        <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[100px]"></div>
                         <div className="flex flex-1">
                             {columns.map((col) => {
                                 const stats = getColumnStats(col);
                                 return (
-                                    <div key={col.id} className={cn("flex-1 min-w-[150px] border-r border-slate-200/60 p-2 flex flex-col justify-between gap-1 h-[80px]", col.isToday && view !== 'day' ? "bg-blue-50/50" : "")}>
+                                    <div key={col.id} className={cn("flex-1 min-w-[150px] border-r border-slate-200/60 p-2 flex flex-col justify-between gap-1 h-[100px]", col.isToday && view !== 'day' ? "bg-blue-50/50" : "")}>
                                         <div className="flex items-start justify-between w-full">
                                             {col.type === 'employee' ? (
                                                 <div className="flex items-center gap-2">
@@ -687,7 +800,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                         <div className="w-full space-y-1">
                                             <div className="flex justify-between items-end text-[9px] text-slate-400 px-0.5">
                                                 <span>Ocupación</span>
-                                                <span className={cn("font-bold", stats.percentage >= 85 ? "text-emerald-600" : stats.percentage >= 65 ? "text-amber-600" : "text-red-500")}>{stats.percentage}%</span>
+                                                <span className={cn("font-bold", stats.percentage >= 85 ? "text-emerald-600" : stats.percentage >= 65 ? "text-amber-600" : "text-blue-600")}>{stats.percentage}%</span>
                                             </div>
                                             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden relative">
                                                 <div className={cn("h-full transition-all duration-500 rounded-full", stats.barColor)} style={{ width: `${stats.percentage}%` }}></div>
@@ -713,7 +826,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                             const absenceOverlay = getAbsenceOverlay(col); 
 
                             return (
-                                <div key={col.id} className="flex-1 min-w-[150px] border-r border-slate-100 relative" style={{ minHeight: `${(END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE}px` }} onDragOver={(e) => handleDragOver(e, col, colIndex)} data-column-id={col.id}>
+                                <div key={col.id} className="flex-1 min-w-[150px] border-r border-slate-100 relative group/col cursor-pointer" style={{ minHeight: `${(END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE}px` }} 
+                                    onDragOver={(e) => handleDragOver(e, col, colIndex)} 
+                                    data-column-id={col.id}
+                                    onClick={(e) => handleEmptySlotClick(e, col)}
+                                >
                                 {timeSlots.map((_, i) => <div key={i} style={{ height: `${30 * PIXELS_PER_MINUTE}px` }} className="border-b border-slate-50 border-dashed w-full pointer-events-none"></div>)}
                                 
                                 {!absenceOverlay && nonWorkingBlocks.map((block, i) => (<div key={i} className="absolute left-0 right-0 bg-slate-100/50 backdrop-grayscale z-10 pointer-events-none" style={{ top: block.top, height: block.height, backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, #e2e8f0 10px, #e2e8f0 12px)' }}></div>))}
@@ -736,52 +853,26 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                     const isFamily = hoveredClient === appt.appointment?.client?.id;
                                     const isBeingResized = resizing && resizing.apptId === appt.id;
                                     const isBeingDragged = isDragging === appt.id;
+                                    const showResizeHandle = hoveredResizeId === appt.id || isBeingResized;
 
                                     return (
-                                    <div 
-                                        key={appt.id}
-                                        // MOUSE EVENTS
-                                        draggable={!absenceOverlay && !resizing && canEdit}
-                                        onDragStart={(e) => handleDragStart(e, appt)}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            // Solo abrir detalle si no hubo drag/resize
-                                            if (dragDistanceRef.current < MIN_DRAG_DISTANCE && !resizing) {
-                                                handleApptClick(appt);
-                                            }
-                                        }}
-                                        onMouseEnter={(e) => handleMouseEnter(e, appt)}
+                                    <div key={appt.id} 
+                                        draggable={!absenceOverlay && !resizing && canEdit} 
+                                        onDragStart={(e) => handleDragStart(e, appt)} 
+                                        onClick={(e) => { e.stopPropagation(); handleApptClick(appt); }} 
+                                        onMouseEnter={(e) => handleMouseEnter(e, appt)} 
                                         onMouseLeave={handleMouseLeave}
-                                        
-                                        // TOUCH EVENTS (NUEVO)
-                                        onTouchStart={(e) => {
-                                            // Solo iniciamos drag si no es resize
-                                            if (!absenceOverlay && !resizing && canEdit) {
-                                                // Check if target is resize handle
-                                                const target = e.target as HTMLElement;
-                                                if (!target.closest('.resize-handle')) {
-                                                    handleDragStart(e, appt);
-                                                }
-                                            }
-                                        }}
-                                        onTouchMove={(e: any) => {
-                                            if (isDragging && !resizing) {
-                                                handleTouchMove(e, appt, col, colIndex);
-                                            }
-                                        }}
-                                        onTouchEnd={(e: any) => {
-                                            if (isDragging && !resizing) {
-                                                handleTouchEnd(e, appt);
-                                            }
-                                        }}
-                                        
+                                        onTouchStart={(e) => { if (!absenceOverlay && !resizing && canEdit) { const target = e.target as HTMLElement; if (!target.closest('.resize-handle')) handleDragStart(e, appt); } }}
+                                        onTouchMove={(e: any) => { if (isDragging && !resizing) handleReactTouchMove(e, appt, col, colIndex); }}
+                                        onTouchEnd={(e: any) => { if (isDragging && !resizing) handleReactTouchEnd(e, appt); }}
+
                                         className={cn(
-                                            "absolute rounded-lg shadow-sm border overflow-hidden transition-all duration-200 ring-1 ring-white flex flex-col p-1.5 group/appt",
-                                            styles.container,
-                                            isBeingDragged ? "opacity-30 cursor-grabbing" : "opacity-100",
+                                            "absolute rounded-lg shadow-sm border overflow-hidden transition-all duration-200 ring-1 ring-white flex flex-col p-1.5 group/appt", 
+                                            styles.container, 
+                                            isBeingDragged ? "opacity-30 cursor-grabbing" : "opacity-100", 
                                             !isBeingDragged && !resizing && canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
-                                            isDimmed ? "opacity-40 scale-95" : "hover:z-50 hover:shadow-lg",
-                                            isFamily ? "ring-2 ring-offset-1 z-40 scale-[1.02] shadow-md" : "",
+                                            isDimmed ? "opacity-40 scale-95" : "hover:z-50 hover:shadow-lg", 
+                                            isFamily ? "ring-2 ring-offset-1 z-40 scale-[1.02] shadow-md" : "", 
                                             isBeingResized ? "z-50 ring-2 ring-blue-400 shadow-xl scale-[1.02]" : ""
                                         )}
                                         style={{ 
@@ -789,58 +880,30 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                             height: `${appt.height}px`, 
                                             left: `${appt.leftPct}%`, 
                                             width: `${appt.widthPct}%`, 
-                                            zIndex: absenceOverlay ? 20 : isBeingDragged ? 30 : isBeingResized ? 35 : 25,
+                                            zIndex: absenceOverlay ? 20 : 25, 
                                             borderColor: isFamily ? stringToColor(appt.appointment?.client?.full_name||'') : undefined,
-                                            // Desactivar user-select durante drag
-                                            userSelect: isBeingDragged || isBeingResized ? 'none' : 'auto'
-                                        }}
-                                    >
+                                            touchAction: 'none',
+                                            WebkitUserSelect: 'none',
+                                            userSelect: 'none'
+                                        }}>
                                         <div className={cn("absolute left-0 top-0 bottom-0 w-1", styles.accentBar)}></div>
-                                        
-                                        <div className="pl-2 w-full overflow-hidden flex flex-col h-full pointer-events-none">
-                                            <div className="flex justify-between items-center w-full">
-                                                <span className={cn("font-bold truncate text-[11px]", styles.text)}>
-                                                    {appt.appointment?.pet?.name}
-                                                </span>
-                                                {appt.height > 30 && (
-                                                    <span className="text-[9px] opacity-60 font-mono ml-1 shrink-0">
-                                                        {format(parseISO(appt.start_time), 'HH:mm')} - {
-                                                            isBeingResized 
-                                                                ? format(addMinutes(parseISO(appt.start_time), resizing.newDuration), 'HH:mm')
-                                                                : format(parseISO(appt.end_time), 'HH:mm')
-                                                        }
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {appt.height > 45 && (
-                                                <div className="flex items-center gap-1 mt-auto">
-                                                    <CategoryIcon size={10} className={styles.subtext} />
-                                                    <span className={cn("font-medium uppercase tracking-tight line-clamp-1 text-[9px]", styles.subtext)}>
-                                                        {appt.service?.name}
-                                                    </span>
-                                                </div>
-                                            )}
+                                        <div className="pl-2 w-full overflow-hidden flex flex-col h-full pointer-events-none select-none">
+                                            <div className="flex justify-between items-center w-full"><span className={cn("font-bold truncate text-[11px]", styles.text)}>{appt.appointment?.pet?.name}</span>{appt.height > 30 && <span className="text-[9px] opacity-60 font-mono ml-1 shrink-0">{format(parseISO(appt.start_time), 'HH:mm')} - {isBeingResized ? format(addMinutes(parseISO(appt.start_time), resizing.newDuration), 'HH:mm') : format(parseISO(appt.end_time), 'HH:mm')}</span>}</div>
+                                            {appt.height > 45 && (<div className="flex items-center gap-1 mt-auto"><CategoryIcon size={10} className={styles.subtext} /><span className={cn("font-medium uppercase tracking-tight line-clamp-1 text-[9px]", styles.subtext)}>{appt.service?.name}</span></div>)}
                                         </div>
                                         
-                                        {/* Resize Handle - MEJORADO */}
                                         {!absenceOverlay && canEdit && (
                                             <div 
-                                                className={cn(
-                                                    "resize-handle absolute bottom-0 left-0 right-0 cursor-ns-resize z-50 flex items-center justify-center transition-all",
-                                                    "opacity-0 group-hover/appt:opacity-100 hover:bg-blue-400/20",
-                                                    // Hacer más grande en touch devices
-                                                    "h-3 md:h-4",
-                                                    isBeingResized && "opacity-100 bg-blue-400/30"
-                                                )}
-                                                onMouseDown={(e) => handleResizeStart(e, appt)}
+                                                className={cn("resize-handle absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize z-50 flex items-center justify-center hover:bg-black/5 transition-opacity", showResizeHandle ? "opacity-100" : "opacity-0")}
+                                                onMouseEnter={() => setHoveredResizeId(appt.id)}
+                                                onMouseLeave={() => setHoveredResizeId(null)}
+                                                onMouseDown={(e) => handleResizeStart(e, appt)} 
                                                 onTouchStart={(e) => handleResizeStart(e, appt)}
-                                                // Prevenir que inicie drag
+                                                onClick={(e) => e.stopPropagation()}
+                                                draggable={true}
                                                 onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                             >
-                                                <GripHorizontal className={cn(
-                                                    "w-4 h-4 transition-colors",
-                                                    isBeingResized ? "text-blue-500" : "text-slate-500/50"
-                                                )} />
+                                                <div className="w-8 h-1 bg-slate-400/40 rounded-full mb-1 pointer-events-none"></div>
                                             </div>
                                         )}
                                     </div>
@@ -856,7 +919,40 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
         </div>
       </div>
       <AppointmentTooltip data={tooltipData} position={tooltipPos} userRole={userRole} />
+      
+      {contextMenu && contextMenu.visible && (
+          <QuickScheduleMenu 
+              contextMenu={contextMenu} 
+              onClose={() => setContextMenu(null)}
+              onSchedule={() => {
+                  setNewApptData({
+                      employeeId: contextMenu.employeeId,
+                      date: contextMenu.date,
+                      startTime: contextMenu.startTime
+                  });
+                  setIsCreateDialogOpen(true);
+                  setContextMenu(null);
+              }}
+          />
+      )}
+
       <AppointmentDetailDialog open={isDetailOpen} onOpenChange={setIsDetailOpen} appointment={selectedAppt} employees={employees} onUpdate={handleRefresh} />
+      
+      {/* INTEGRACIÓN DEL DIÁLOGO DE NUEVA CITA */}
+      <NewAppointmentDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        initialDate={newApptData?.date ? format(newApptData.date, 'yyyy-MM-dd') : undefined}
+        initialTime={newApptData?.startTime ? format(newApptData.startTime, 'HH:mm') : undefined}
+        initialEmployeeId={newApptData?.employeeId}
+        onSuccess={async () => {
+          handleRefresh();
+          await new Promise(resolve => setTimeout(resolve, 300));
+          setIsCreateDialogOpen(false);
+          setNewApptData(null);
+          toast.success("Cita creada exitosamente");
+        }}
+      />
     </>
   );
 }

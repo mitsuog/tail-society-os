@@ -24,9 +24,11 @@ import { cn } from "@/lib/utils";
 import Cropper from 'react-easy-crop'; 
 import Webcam from "react-webcam"; 
 
+// --- CORRECCIÓN 1: Agregar onPetAdded a la interfaz ---
 interface AddPetDialogProps {
   clientId: string;
   trigger?: React.ReactNode;
+  onPetAdded?: () => void | Promise<void>;
 }
 
 // --- UTILIDADES ---
@@ -71,7 +73,8 @@ function dataURLtoFile(dataurl: string, filename: string) {
   return new File([u8arr], filename, { type: mime });
 }
 
-export default function AddPetDialog({ clientId, trigger }: AddPetDialogProps) {
+// --- CORRECCIÓN 2: Desestructurar onPetAdded ---
+export default function AddPetDialog({ clientId, trigger, onPetAdded }: AddPetDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -231,6 +234,10 @@ export default function AddPetDialog({ clientId, trigger }: AddPetDialogProps) {
 
       if (error) throw error;
       toast.success(`Mascota ${formData.name} registrada.`);
+      
+      // --- CORRECCIÓN 3: Llamar a onPetAdded si existe ---
+      if (onPetAdded) await onPetAdded();
+      
       setOpen(false);
       setFormData({
         name: '', species: 'Perro', breed: '', color: '', size: 'Chico', birth_date: '', photo_url: '',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger 
@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { addMinutes } from 'date-fns';
+// IMPORTACIÓN NUEVA
+import AddPetDialog from '@/components/AddPetDialog'; 
 
 // --- INTERFACES ---
 interface Service {
@@ -229,6 +231,9 @@ export default function NewAppointmentDialog({
   onSuccess,
   initialClient,
   initialPetId,
+  initialDate,        // ← NUEVO
+  initialTime,        // ← NUEVO
+  initialEmployeeId,  // ← NUEVO
   customTrigger,
   open: externalOpen, // RECIBIR ESTADO EXTERNO
   onOpenChange: externalOnOpenChange // RECIBIR SETTER EXTERNO
@@ -236,6 +241,9 @@ export default function NewAppointmentDialog({
   onSuccess?: () => void;
   initialClient?: { id: string, full_name: string, phone: string };
   initialPetId?: string;
+  initialDate?: string;         // ← NUEVO (formato: 'YYYY-MM-DD')
+  initialTime?: string;          // ← NUEVO (formato: 'HH:mm')
+  initialEmployeeId?: string;    // ← NUEVO
   customTrigger?: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -286,26 +294,41 @@ export default function NewAppointmentDialog({
                 if (!selections[initialPetId]) {
                     setSelections(prev => ({
                         ...prev,
-                        [initialPetId]: { startTime: globalTime, mainServiceId: "", employeeId: "", extras: [] }
+                        [initialPetId]: { 
+                          startTime: initialTime || globalTime, 
+                          mainServiceId: "", 
+                          employeeId: initialEmployeeId || "", 
+                          extras: [] 
+                        }
                     }));
                 }
             }
-        } else {
-            // Reset
-            setStep(1);
-            setSelectedClientId("");
-            setSearchTerm("");
-            setPets([]);
-            setSelectedPetIds([]);
-            setSelections({});
-            setGlobalTime("09:00");
-            setDate("");
-            setNotes("");
         }
+        
+        // ========== APLICAR VALORES INICIALES DESDE CALENDARIO ==========
+        if (initialDate) {
+          setDate(initialDate);
+        }
+        if (initialTime) {
+          setGlobalTime(initialTime);
+        }
+        // El initialEmployeeId se aplica cuando se crea una selección de mascota
+        // ================================================================
       };
       fetchData();
+    } else {
+        // Reset al cerrar
+        setStep(1);
+        setSelectedClientId("");
+        setSearchTerm("");
+        setPets([]);
+        setSelectedPetIds([]);
+        setSelections({});
+        setGlobalTime("09:00");
+        setDate("");
+        setNotes("");
     }
-  }, [open, initialClient?.id, initialPetId]);
+  }, [open, initialClient?.id, initialPetId, initialDate, initialTime, initialEmployeeId]);
 
   // BUSQUEDA AVANZADA
   useEffect(() => {
@@ -346,17 +369,20 @@ export default function NewAppointmentDialog({
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, initialClient]);
 
-  useEffect(() => {
+  // --- REFACTORIZADO: FUNCIÓN DE CARGA DE MASCOTAS ---
+  // Se usa useCallback para poder pasarla al AddPetDialog
+  const fetchPets = useCallback(async () => {
     if (selectedClientId) {
-        const fetchPets = async () => {
-            const { data } = await supabase.from('pets').select('*').eq('client_id', selectedClientId);
-            if (data) setPets(data);
-        };
-        fetchPets();
+        const { data } = await supabase.from('pets').select('*').eq('client_id', selectedClientId);
+        if (data) setPets(data);
     } else {
         setPets([]);
     }
-  }, [selectedClientId]);
+  }, [selectedClientId, supabase]);
+
+  useEffect(() => {
+    fetchPets();
+  }, [fetchPets]);
 
   const handleClientSelect = (client: Client) => {
       setSelectedClientId(client.id);
@@ -367,7 +393,15 @@ export default function NewAppointmentDialog({
   const handlePetToggle = (petId: string) => {
     setSelectedPetIds(prev => prev.includes(petId) ? prev.filter(id => id !== petId) : [...prev, petId]);
     if (!selections[petId]) {
-        setSelections(prev => ({ ...prev, [petId]: { startTime: globalTime, mainServiceId: "", employeeId: "", extras: [] } }));
+        setSelections(prev => ({ 
+          ...prev, 
+          [petId]: { 
+            startTime: initialTime || globalTime, 
+            mainServiceId: "", 
+            employeeId: initialEmployeeId || "", 
+            extras: [] 
+          } 
+        }));
     }
   };
 
@@ -454,9 +488,17 @@ export default function NewAppointmentDialog({
                 currentStartTime = extraEndTime;
             }
         }
-        toast.success("Citas creadas exitosamente");
-        setOpen(false);
-        if (onSuccess) onSuccess(); 
+        
+        // IMPORTANTE: Llamar onSuccess y dejar que el padre maneje el cierre
+        if (onSuccess) {
+            await onSuccess(); 
+            // NO cerramos el modal aquí, el padre (CalendarBoard) lo hará
+            // después de hacer el refresh
+        } else {
+            // Si se usa standalone (sin callback), mostrar toast y cerrar
+            toast.success("Citas creadas exitosamente");
+            setOpen(false);
+        }
     } catch (e: any) {
         toast.error(e.message || "Error al crear citas");
     } finally {
@@ -466,9 +508,6 @@ export default function NewAppointmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {/* SI ES CONTROLADO (DESDE SIDEBAR), NO RENDERIZAMOS EL TRIGGER POR DEFECTO.
-         SI NO ES CONTROLADO (USO INDIVIDUAL), SE MUESTRA EL BOTÓN.
-      */}
       {!isControlled && (
           <DialogTrigger asChild>
             {customTrigger ? customTrigger : (
@@ -537,11 +576,36 @@ export default function NewAppointmentDialog({
 
                 {selectedClientId && (
                     <div className="space-y-3 animate-in fade-in zoom-in-95 duration-300 delay-100">
-                        <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Dog size={12}/> Seleccionar Mascotas</Label>
+                        {/* --- MODIFICADO: Header con botón de agregar mascota --- */}
+                        <div className="flex items-center justify-between">
+                            <Label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><Dog size={12}/> Seleccionar Mascotas</Label>
+                            <AddPetDialog 
+                                clientId={selectedClientId} 
+                                onPetAdded={fetchPets}
+                                trigger={
+                                    <Button variant="ghost" size="sm" className="h-6 text-[10px] text-purple-600 hover:text-purple-700 hover:bg-purple-50 px-2">
+                                        <Plus size={12} className="mr-1"/> Nueva Mascota
+                                    </Button>
+                                }
+                            />
+                        </div>
+                        {/* --------------------------------------------------- */}
+
                         {pets.length === 0 ? (
                             <div className="p-6 border border-dashed rounded-xl text-center bg-slate-50">
                                 <Dog className="h-8 w-8 text-slate-300 mx-auto mb-2 opacity-50"/>
-                                <span className="text-sm text-slate-400 block">Este cliente no tiene mascotas registradas.</span>
+                                <span className="text-sm text-slate-400 block mb-3">Este cliente no tiene mascotas registradas.</span>
+                                {/* --- MODIFICADO: Botón estado vacío --- */}
+                                <AddPetDialog 
+                                    clientId={selectedClientId} 
+                                    onPetAdded={fetchPets}
+                                    trigger={
+                                        <Button variant="outline" size="sm" className="text-xs bg-white">
+                                            <Plus size={12} className="mr-2"/> Registrar Primera Mascota
+                                        </Button>
+                                    }
+                                />
+                                {/* --------------------------------------- */}
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
