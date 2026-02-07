@@ -5,7 +5,7 @@ import ClientFilters from '@/components/ClientFilters';
 import Pagination from '@/components/Pagination';
 import ClientRow from '@/components/ClientRow';
 import DashboardNewClientBtn from '@/components/DashboardNewClientBtn';
-import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog'; // <--- 1. IMPORTAR EL MODAL
+import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableHead, TableHeader, TableRow, TableCell } from "@/components/ui/table";
@@ -143,8 +143,63 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   let clients: any[] = [];
   let totalCount = 0;
 
-  // --- ESCENARIO 1: ORDEN POR VISITAS RECIENTES (Complejo) ---
-  if (sort === 'newest') {
+  // --- ESCENARIO 1: ORDEN POR ÚLTIMA VISITA (NUEVO) ---
+  if (sort === 'last_visit') {
+      
+      // 1. Obtener citas completadas ordenadas por fecha más reciente
+      const { data: recentAppts } = await supabase
+        .from('appointments')
+        .select('client_id, date')
+        .in('status', ['completed', 'attended']) 
+        .order('date', { ascending: false })
+        .limit(1000);
+      
+      let orderedIds = recentAppts ? Array.from(new Set(recentAppts.map(a => a.client_id))) : [];
+
+      // 2. Aplicar búsqueda si existe
+      if (searchIds !== null) {
+          const matching = orderedIds.filter(id => searchIds!.includes(id));
+          const extras = searchIds.filter(id => !orderedIds.includes(id));
+          orderedIds = [...matching, ...extras];
+      } else if (searchIds === null && orderedIds.length === 0) {
+          const { data: defaultClients } = await supabase.from('clients').select('id').order('created_at', {ascending: false}).limit(50);
+          if (defaultClients) orderedIds = defaultClients.map(c => c.id);
+      }
+
+      // 3. Aplicar filtro por especie
+      if (speciesFilter && speciesFilter !== 'all') {
+          const { data: petsWithSpecies } = await supabase
+              .from('pets')
+              .select('client_id')
+              .eq('species', speciesFilter);
+          
+          if (petsWithSpecies) {
+              const clientIdsWithSpecies = Array.from(new Set(petsWithSpecies.map(p => p.client_id)));
+              orderedIds = orderedIds.filter(id => clientIdsWithSpecies.includes(id));
+          } else {
+              orderedIds = [];
+          }
+      }
+
+      // 4. Paginación Manual sobre IDs
+      totalCount = orderedIds.length;
+      const pageIds = orderedIds.slice(offset, offset + ITEMS_PER_PAGE);
+
+      if (pageIds.length > 0) {
+          const { data } = await supabase
+            .from('clients')
+            .select(`*, pets ( id, name, breed, species, appointments ( date, status ) )`)
+            .in('id', pageIds);
+          
+          // Reordenar según el orden original de IDs
+          if (data) {
+              const orderMap = new Map(pageIds.map((id, idx) => [id, idx]));
+              clients = data.sort((a: any, b: any) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
+          }
+      }
+  }
+  // --- ESCENARIO 2: ORDEN POR REGISTRO RECIENTE (newest) ---
+  else if (sort === 'newest') {
       
       // Obtener IDs de citas COMPLETADAS en orden descendente
       const { data: recentAppts } = await supabase
@@ -168,55 +223,104 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           if (defaultClients) orderedIds = defaultClients.map(c => c.id);
       }
 
+      // NUEVO: Aplicar filtro por especie
+      if (speciesFilter && speciesFilter !== 'all') {
+          const { data: petsWithSpecies } = await supabase
+              .from('pets')
+              .select('client_id')
+              .eq('species', speciesFilter);
+          
+          if (petsWithSpecies) {
+              const clientIdsWithSpecies = Array.from(new Set(petsWithSpecies.map(p => p.client_id)));
+              orderedIds = orderedIds.filter(id => clientIdsWithSpecies.includes(id));
+          } else {
+              orderedIds = [];
+          }
+      }
+
       // Paginación Manual sobre IDs
       totalCount = orderedIds.length;
       const pageIds = orderedIds.slice(offset, offset + ITEMS_PER_PAGE);
 
       if (pageIds.length > 0) {
-          let query = supabase
+          const { data } = await supabase
             .from('clients')
             .select(`*, pets ( id, name, breed, species, appointments ( date, status ) )`)
             .in('id', pageIds);
           
-          if (speciesFilter) query = query.ilike('pets.species', speciesFilter);
-
-          const { data } = await query;
-          // Reordenar en JS para respetar el orden de fecha
+          // Reordenar según el orden original de IDs
           if (data) {
-              clients = pageIds.map(id => data.find((c:any) => c.id === id)).filter(Boolean);
+              const orderMap = new Map(pageIds.map((id, idx) => [id, idx]));
+              clients = data.sort((a: any, b: any) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
           }
       }
-  } 
-  // --- ESCENARIO 2: ORDEN ESTÁNDAR (A-Z, Z-A, Antiguos) ---
+  }
+  // --- ESCENARIO 3: OTROS ORDENAMIENTOS (name_asc, name_desc, oldest) ---
   else {
+      
       let query = supabase
         .from('clients')
         .select(`*, pets ( id, name, breed, species, appointments ( date, status ) )`, { count: 'exact' });
 
-      // Filtros
+      // Aplicar búsqueda
       if (searchIds !== null) {
-          if (searchIds.length > 0) query = query.in('id', searchIds);
-          else query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-      }
-      if (speciesFilter) query = query.ilike('pets.species', speciesFilter);
-
-      if (sort === 'name_asc') {
-          query = query.order('full_name', { ascending: true });
-      } else if (sort === 'name_desc') {
-          query = query.order('full_name', { ascending: false });
-      } else if (sort === 'oldest') {
-          query = query.order('created_at', { ascending: true });
-      } else {
-          // Default fallback
-          query = query.order('created_at', { ascending: false });
+          if (searchIds.length === 0) {
+              clients = [];
+              totalCount = 0;
+          } else {
+              query = query.in('id', searchIds);
+          }
       }
 
-      // Paginación SQL
-      query = query.range(offset, offset + ITEMS_PER_PAGE - 1);
+      // Aplicar filtro por especie
+      if (speciesFilter && speciesFilter !== 'all' && searchIds?.length !== 0) {
+          const { data: petsWithSpecies } = await supabase
+              .from('pets')
+              .select('client_id')
+              .eq('species', speciesFilter);
+          
+          if (petsWithSpecies && petsWithSpecies.length > 0) {
+              const clientIdsWithSpecies = Array.from(new Set(petsWithSpecies.map(p => p.client_id)));
+              
+              // Combinar con búsqueda si existe
+              if (searchIds !== null) {
+                  const combinedIds = searchIds.filter(id => clientIdsWithSpecies.includes(id));
+                  if (combinedIds.length === 0) {
+                      clients = [];
+                      totalCount = 0;
+                  } else {
+                      query = query.in('id', combinedIds);
+                  }
+              } else {
+                  query = query.in('id', clientIdsWithSpecies);
+              }
+          } else {
+              clients = [];
+              totalCount = 0;
+          }
+      }
 
-      const { data, count } = await query;
-      clients = data || [];
-      totalCount = count || 0;
+      // Solo ejecutar query si todavía tenemos datos para buscar
+      if (totalCount === 0 && clients.length === 0 && (searchIds === null || searchIds.length > 0)) {
+          // Aplicar ordenamiento
+          if (sort === 'name_asc') {
+              query = query.order('full_name', { ascending: true });
+          } else if (sort === 'name_desc') {
+              query = query.order('full_name', { ascending: false });
+          } else if (sort === 'oldest') {
+              query = query.order('created_at', { ascending: true });
+          } else {
+              // Default fallback
+              query = query.order('created_at', { ascending: false });
+          }
+
+          // Paginación SQL
+          query = query.range(offset, offset + ITEMS_PER_PAGE - 1);
+
+          const { data, count } = await query;
+          clients = data || [];
+          totalCount = count || 0;
+      }
   }
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
@@ -262,8 +366,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
            </Link>
            <div className="shrink-0"><DashboardNewClientBtn /></div>
            
-           {/* --- 2. AQUÍ ESTÁ EL CAMBIO PRINCIPAL --- */}
-           {/* Se reemplazó el <Link> por el componente del Modal con customTrigger */}
            <NewAppointmentDialog 
              customTrigger={
                 <Button size="sm" className="gap-2 bg-slate-900 hover:bg-slate-800 text-white h-9 shadow-md shrink-0">
@@ -271,8 +373,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 </Button>
              }
            />
-           {/* --------------------------------------- */}
-
         </div>
       </div>
 
@@ -319,12 +419,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <Search placeholder="Buscar por cliente, mascota o teléfono..." />
           </div>
           <div className="w-full md:w-auto flex flex-wrap items-center gap-3 justify-start md:justify-end">
-             <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                    <Filter size={10}/> Filtros:
-                </span>
-                <ClientFilters />
-             </div>
+             <ClientFilters />
           </div>
         </div>
 

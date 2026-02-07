@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Home, 
   PlusCircle, 
@@ -21,6 +21,8 @@ import {
 import { cn } from '@/lib/utils';
 import AddClientDialog from '@/components/AddClientDialog'; 
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
+import { createClient } from '@/utils/supabase/client';
+import { toast } from 'sonner';
 
 interface SidebarProps {
   isDesktopCollapsed: boolean;
@@ -36,8 +38,33 @@ export default function Sidebar({
   closeMobileMenu
 }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isAppointmentModalOpen, setAppointmentModalOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const supabase = createClient();
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        toast.error('Error al cerrar sesión', {
+          description: error.message,
+        });
+      } else {
+        toast.success('Sesión cerrada', {
+          description: 'Hasta pronto!',
+        });
+        router.push('/login');
+        router.refresh();
+      }
+    } catch (error) {
+      toast.error('Error inesperado al cerrar sesión');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   if (pathname?.startsWith('/checkin')) return null;
 
@@ -85,13 +112,18 @@ export default function Sidebar({
           
           {isDesktopCollapsed && (
             <div className="w-full flex justify-center">
-               <div className="relative w-10 h-10">
+               <div className="relative w-10 h-10 group">
                  <Image 
                     src="/Logo500x500.png" 
                     alt="TS" 
                     fill 
                     className="object-contain rounded-full"
+                    sizes="40px"
                  />
+                 {/* Tooltip on hover */}
+                 <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-800 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                   Tail Society
+                 </div>
                </div>
             </div>
           )}
@@ -207,9 +239,24 @@ export default function Sidebar({
         />
 
         <div className="p-4 border-t border-slate-800 bg-slate-950/30 shrink-0">
-          <button className={cn("flex items-center rounded-xl hover:bg-red-900/20 hover:text-red-400 transition-colors text-sm font-medium text-slate-400 w-full", isDesktopCollapsed ? "justify-center p-3" : "px-4 py-2 gap-3")}>
-            <LogOut size={20} className="shrink-0" />
-            {!isDesktopCollapsed && <span>Cerrar Sesión</span>}
+          <button 
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            title={isDesktopCollapsed ? (isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión') : undefined}
+            className={cn(
+              "flex items-center rounded-xl hover:bg-red-900/20 hover:text-red-400 transition-colors text-sm font-medium text-slate-400 w-full disabled:opacity-50 disabled:cursor-not-allowed group relative",
+              isDesktopCollapsed ? "justify-center p-3" : "px-4 py-2 gap-3"
+            )}
+          >
+            <LogOut size={20} className={cn("shrink-0", isLoggingOut && "animate-spin")} />
+            {!isDesktopCollapsed && <span>{isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}</span>}
+            
+            {/* Tooltip for collapsed state */}
+            {isDesktopCollapsed && !isLoggingOut && (
+              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-800 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                Cerrar Sesión
+              </div>
+            )}
           </button>
         </div>
       </aside>

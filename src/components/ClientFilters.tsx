@@ -4,6 +4,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 
 export default function ClientFilters() {
   const router = useRouter();
@@ -15,32 +17,68 @@ export default function ClientFilters() {
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== 'all') params.set(key, value);
     else params.delete(key);
-    params.delete('page'); // Reseteamos página siempre
+    params.delete('page'); // Reset page on filter change
     router.push(`/?${params.toString()}`);
   };
 
   return (
-    <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100 mb-4">
-      <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
-        <span className="text-xs font-bold text-slate-400 uppercase mr-2 hidden sm:inline">Filtrar:</span>
-        <Button variant={currentSpecies === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => updateFilter('species', 'all')} className="text-xs">Todos</Button>
-        <Button variant={currentSpecies === 'Perro' ? 'secondary' : 'ghost'} size="sm" onClick={() => updateFilter('species', 'Perro')} className="text-xs gap-1">🐶 Perros</Button>
-        <Button variant={currentSpecies === 'Gato' ? 'secondary' : 'ghost'} size="sm" onClick={() => updateFilter('species', 'Gato')} className="text-xs gap-1">🐱 Gatos</Button>
+    <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center w-full sm:w-auto">
+      
+      {/* Species Filter */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 shrink-0">
+          <SlidersHorizontal size={14} />
+          <span>Especie:</span>
+        </div>
+        <div className="flex gap-1.5">
+          <Button 
+            variant={currentSpecies === 'all' ? 'default' : 'outline'} 
+            size="sm" 
+            onClick={() => updateFilter('species', 'all')} 
+            className={currentSpecies === 'all' ? 'bg-slate-900 hover:bg-slate-800' : 'hover:bg-slate-100'}
+          >
+            Todos
+          </Button>
+          <Button 
+            variant={currentSpecies === 'Perro' ? 'default' : 'outline'} 
+            size="sm" 
+            onClick={() => updateFilter('species', 'Perro')} 
+            className={currentSpecies === 'Perro' ? 'bg-slate-900 hover:bg-slate-800' : 'hover:bg-slate-100'}
+          >
+            🐶 Perros
+          </Button>
+          <Button 
+            variant={currentSpecies === 'Gato' ? 'default' : 'outline'} 
+            size="sm" 
+            onClick={() => updateFilter('species', 'Gato')} 
+            className={currentSpecies === 'Gato' ? 'bg-slate-900 hover:bg-slate-800' : 'hover:bg-slate-100'}
+          >
+            🐱 Gatos
+          </Button>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 w-full sm:w-auto">
-        <span className="text-xs font-bold text-slate-400 uppercase mr-2 hidden sm:inline">Ordenar:</span>
-        <select 
-          className="h-9 rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm cursor-pointer focus:outline-none"
-          value={currentSort}
-          onChange={(e) => updateFilter('sort', e.target.value)}
-        >
-          <option value="newest">📅 Recientes (Registro)</option>
-          <option value="last_visit">⏱️ Última Visita</option>
-          <option value="oldest">📆 Antiguos (Registro)</option>
-          <option value="alpha_asc">🔤 Nombre (A-Z)</option>
-          <option value="alpha_desc">🔤 Nombre (Z-A)</option>
-        </select>
+      {/* Divider - Hidden on mobile */}
+      <div className="hidden sm:block w-px h-8 bg-slate-200" />
+
+      {/* Sort Dropdown */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 shrink-0">
+          <ArrowUpDown size={14} />
+          <span>Ordenar:</span>
+        </div>
+        <Select value={currentSort} onValueChange={(value) => updateFilter('sort', value)}>
+          <SelectTrigger className="w-full sm:w-[200px] h-9 text-sm border-slate-300">
+            <SelectValue placeholder="Seleccionar orden" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">📅 Más Recientes</SelectItem>
+            <SelectItem value="last_visit">⏱️ Última Visita</SelectItem>
+            <SelectItem value="oldest">📆 Más Antiguos</SelectItem>
+            <SelectItem value="name_asc">🔤 Nombre (A-Z)</SelectItem>
+            <SelectItem value="name_desc">🔤 Nombre (Z-A)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

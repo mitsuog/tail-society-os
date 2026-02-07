@@ -14,8 +14,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  // MODO KIOSCO: Retorna solo el contenido limpio
-  if (pathname?.startsWith('/checkin')) {
+  // PÁGINAS SIN LAYOUT: Login y Kiosco
+  if (pathname?.startsWith('/checkin') || pathname?.startsWith('/login') || pathname === '/login') {
     return <main className="min-h-screen bg-slate-50">{children}</main>;
   }
 

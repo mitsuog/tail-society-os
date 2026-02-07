@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   format, addMinutes, startOfDay, setHours, addDays, isSameDay, 
   differenceInMinutes, parseISO, endOfDay, getDay, isWithinInterval, subDays,
-  startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth // <--- AQUÍ ESTÁ LA CORRECCIÓN
+  startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { 
   Clock, Scissors, Droplets, Sparkles, Box, 
-  User, PawPrint, FileText, Plane, AlertCircle,
+  PawPrint, FileText, Plane, AlertCircle,
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, Filter, Plus, GripHorizontal, Flag
 } from 'lucide-react';
 import { toast } from "sonner";
@@ -32,7 +32,6 @@ interface Holiday {
     name: string;
 }
 
-// ⚠️ AQUÍ ESTÁ EL ARREGLO DEL ERROR: Agregamos userRole a la interfaz
 interface CalendarBoardProps {
   currentDate: Date;
   view: 'day' | '3day' | 'week' | 'month';
@@ -59,7 +58,6 @@ interface ResizingState {
     startYTime: number; 
 }
 
-// --- TRADUCCIÓN DE ROLES ---
 const ROLE_TRANSLATIONS: Record<string, string> = {
     stylist: 'Estilista',
     bather: 'Bañador',
@@ -68,7 +66,7 @@ const ROLE_TRANSLATIONS: Record<string, string> = {
     admin: 'Administrador'
 };
 
-// --- UTILS ---
+// --- Utils ---
 const getServiceCategoryStyles = (category: string = 'general') => {
   switch (category?.toLowerCase()) {
       case 'cut': return { container: 'bg-purple-50 hover:bg-purple-100 border-purple-200', accentBar: 'bg-purple-500', text: 'text-purple-900', subtext: 'text-purple-700', icon: Scissors, tooltipBg: 'bg-purple-50', tooltipBorder: 'border-purple-200' };
@@ -80,7 +78,7 @@ const getServiceCategoryStyles = (category: string = 'general') => {
 const getInitials = (first: string, last?: string) => `${first?.charAt(0) || ''}${last?.charAt(0) || ''}`.toUpperCase();
 const stringToColor = (str: string) => { let hash = 0; for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); } return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`; };
 
-// --- TOOLTIP ---
+// --- Tooltip ---
 const AppointmentTooltip = ({ data, position, userRole }: { data: any, position: { x: number, y: number } | null, userRole: string }) => {
     if (!data || !position) return null;
     const style: React.CSSProperties = { top: position.y + 10, left: position.x + 10, position: 'fixed', zIndex: 9999 };
@@ -90,12 +88,8 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
     }
     const styles = getServiceCategoryStyles(data.service?.category);
     const CategoryIcon = styles.icon;
-
-    // Lógica de enmascaramiento para el Tooltip
     let clientName = data.appointment?.client?.full_name || '';
-    if (userRole === 'employee') {
-        clientName = clientName.split(' ')[0] + ' (Cliente)'; // Solo primer nombre
-    }
+    if (userRole === 'employee') { clientName = clientName.split(' ')[0] + ' (Cliente)'; }
 
     return createPortal(
         <div className={cn("w-56 rounded-xl shadow-2xl border p-3 text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-100 pointer-events-none ring-1 ring-black/5", styles.tooltipBg, styles.tooltipBorder)} style={style}>
@@ -114,13 +108,11 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
                     <div className="flex items-center gap-2"><CategoryIcon size={12} className={styles.subtext}/><span className="font-semibold uppercase tracking-tight opacity-90">{data.service?.name}</span></div>
                     <div className={cn("font-mono font-bold opacity-70", styles.text)}>{format(parseISO(data.start_time), 'HH:mm')}</div>
                 </div>
-                {data.appointment?.notes && <div className="mt-2 p-2 bg-yellow-50/80 rounded border border-yellow-100 text-yellow-800 text-[10px] flex gap-1.5 items-start"><FileText size={10} className="mt-0.5 shrink-0"/> <span className="line-clamp-3">{data.appointment?.notes}</span></div>}
             </div>
         </div>, document.body
     );
 };
 
-// --- COMPONENTE PRINCIPAL ---
 export default function CalendarBoard({ currentDate, view, employees, appointments = [], userRole = 'employee' }: CalendarBoardProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -131,30 +123,29 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const PIXELS_PER_MINUTE = 1.8; 
   const SNAP_MINUTES = 15; 
 
-  // Estados
   const [localAppts, setLocalAppts] = useState<any[]>(appointments);
   const [schedules, setSchedules] = useState<any[]>([]); 
   const [absences, setAbsences] = useState<any[]>([]); 
   const [holidays, setHolidays] = useState<Holiday[]>([]);
-
   const [isDragging, setIsDragging] = useState<string | null>(null);
+  const [touchDragStart, setTouchDragStart] = useState<{ x: number; y: number; time: number } | null>(null);
+  const [isDragStarted, setIsDragStarted] = useState(false);
+  const dragDistanceRef = useRef(0);
+  const MIN_DRAG_DISTANCE = 5; 
   const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
   const [resizing, setResizing] = useState<ResizingState | null>(null);
-
   const [refreshKey, setRefreshKey] = useState(0); 
   const [selectedAppt, setSelectedAppt] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [tooltipData, setTooltipData] = useState<any | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{x:number, y:number} | null>(null);
   const [hoveredClient, setHoveredClient] = useState<string | null>(null);
+  
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const ghostRef = useRef<DragGhost | null>(null);
 
-  // --- PERMISOS ---
-  // El empleado NO puede editar (arrastrar/redimensionar) ni ver datos completos
-  const canEdit = userRole === 'admin' || userRole === 'manager' || userRole === 'receptionist';
+  const canEdit = useMemo(() => ['admin', 'manager', 'receptionist'].includes(userRole || ''), [userRole]);
 
-  // --- HANDLERS ---
   const handleRefresh = useCallback(() => { setRefreshKey(prev => prev + 1); }, []);
 
   const handleNavigate = (type: 'date' | 'view', value: any) => {
@@ -165,36 +156,39 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   };
 
   const handleDateStep = (direction: 'prev' | 'next') => {
-      if (view === 'month') {
-          const newDate = direction === 'next' ? addMonths(currentDate, 1) : subMonths(currentDate, 1);
-          handleNavigate('date', newDate);
-      } else {
-          const step = view === 'week' ? 7 : view === '3day' ? 3 : 1;
-          const newDate = direction === 'next' ? addDays(currentDate, step) : subDays(currentDate, step);
-          handleNavigate('date', newDate);
-      }
+      const step = view === 'week' ? 7 : view === '3day' ? 3 : 1;
+      const newDate = direction === 'next' ? addDays(currentDate, step) : subDays(currentDate, step);
+      handleNavigate('date', newDate);
   };
 
-  // --- EFECTOS ---
+  // --- 1. DEFINICIÓN DE COLUMNAS (MOVIDO AL PRINCIPIO PARA EVITAR ERRORES DE REFERENCIA) ---
+  const columns = useMemo<ColumnData[]>(() => {
+    if (view === 'day') {
+      return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
+    } else {
+      let daysToShow = view === '3day' ? 3 : 7;
+      return Array.from({ length: daysToShow }).map((_, i) => {
+        const date = addDays(currentDate, i);
+        return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
+      });
+    }
+  }, [view, currentDate, employees]);
+
+  // --- Data Fetching ---
   useEffect(() => { setLocalAppts(appointments); }, [appointments]);
 
   useEffect(() => {
     const fetchData = async () => {
       let startRange, endRange;
-
       if (view === 'month') {
           const monthStart = startOfMonth(currentDate);
           const monthEnd = endOfMonth(monthStart);
           startRange = startOfWeek(monthStart, { weekStartsOn: 1 }); 
           endRange = endOfWeek(monthEnd, { weekStartsOn: 1 });
-      } else if (view === 'week' || view === '3day') { 
-          startRange = startOfDay(currentDate); 
-          endRange = addDays(endOfDay(currentDate), view === '3day' ? 2 : 6); 
       } else {
           startRange = startOfDay(currentDate);
-          endRange = endOfDay(currentDate);
+          endRange = endOfDay(view === '3day' ? addDays(currentDate, 2) : view === 'week' ? addDays(currentDate, 6) : currentDate);
       }
-      
       const { data: apptData } = await supabase.from('appointment_services')
         .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
         .gte('start_time', startRange.toISOString()).lte('end_time', endRange.toISOString());
@@ -203,44 +197,42 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const { data: schedData } = await supabase.from('employee_schedules').select('*');
       if (schedData) setSchedules(schedData);
 
-      const { data: absData } = await supabase.from('employee_absences').select('*')
-        .lte('start_date', endRange.toISOString()).gte('end_date', startRange.toISOString());
+      const { data: absData } = await supabase.from('employee_absences').select('*');
       if (absData) setAbsences(absData);
 
-      const { data: holData } = await supabase.from('official_holidays').select('*')
-        .gte('date', format(startRange, 'yyyy-MM-dd'))
-        .lte('date', format(endRange, 'yyyy-MM-dd'));
+      const { data: holData } = await supabase.from('official_holidays').select('*');
       if (holData) setHolidays(holData);
     };
     fetchData();
-  }, [currentDate, view, refreshKey]);
+  }, [currentDate, view, refreshKey, supabase]);
 
+  // --- RESIZE LOGIC ---
   useEffect(() => {
       if (!resizing) return;
 
       const handleMove = (e: MouseEvent | TouchEvent) => {
+          if (e.cancelable) e.preventDefault(); 
           const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
           const deltaPixels = clientY - resizing.initialY;
           const deltaMinutes = Math.round(deltaPixels / PIXELS_PER_MINUTE);
-          let rawNewDuration = resizing.originalDuration + deltaMinutes;
-          let snappedDuration = Math.round(rawNewDuration / SNAP_MINUTES) * SNAP_MINUTES;
-          if (snappedDuration < 15) snappedDuration = 15;
+          let snappedDuration = Math.max(15, Math.round((resizing.originalDuration + deltaMinutes) / SNAP_MINUTES) * SNAP_MINUTES);
+          
           setResizing(prev => prev ? ({ ...prev, newDuration: snappedDuration }) : null);
       };
 
       const handleEnd = async () => {
           if (!resizing) return;
           const appt = localAppts.find(a => a.id === resizing.apptId);
-          if (appt) {
+          if (appt && resizing.newDuration !== resizing.originalDuration) {
               const start = parseISO(appt.start_time);
               const newEnd = addMinutes(start, resizing.newDuration);
               setLocalAppts(prev => prev.map(a => a.id === resizing.apptId ? { ...a, end_time: newEnd.toISOString() } : a));
               try {
                   await supabase.from('appointment_services').update({ end_time: newEnd.toISOString() }).eq('id', resizing.apptId);
                   toast.success("Duración actualizada");
-              } catch (error) {
-                  toast.error("Error al actualizar");
-                  handleRefresh(); 
+              } catch {
+                  toast.error("Error al guardar");
+                  handleRefresh();
               }
           }
           setResizing(null);
@@ -257,50 +249,230 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           window.removeEventListener('touchmove', handleMove);
           window.removeEventListener('touchend', handleEnd);
       };
-  }, [resizing, localAppts, supabase, handleRefresh, PIXELS_PER_MINUTE, SNAP_MINUTES]);
+  }, [resizing, localAppts, supabase, handleRefresh]);
 
   const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, appt: any) => {
-      // Si no puede editar, no hace nada
       if (!canEdit) return;
-
-      e.stopPropagation(); 
+      e.stopPropagation();
       e.preventDefault(); 
+      
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       const start = parseISO(appt.start_time);
       const end = parseISO(appt.end_time);
-      const duration = differenceInMinutes(end, start);
-      const startYTime = start.getHours() * 60 + start.getMinutes();
-      setResizing({ apptId: appt.id, initialY: clientY, originalDuration: duration, newDuration: duration, startYTime });
+      
+      setResizing({ 
+          apptId: appt.id, 
+          initialY: clientY, 
+          originalDuration: differenceInMinutes(end, start), 
+          newDuration: differenceInMinutes(end, start), 
+          startYTime: 0 
+      });
       setTooltipData(null); 
+      setIsDragging(null);
   };
 
-  const columns = useMemo<ColumnData[]>(() => {
-    if (view === 'day') {
-      return employees.map(emp => ({ 
-          id: emp.id, 
-          title: `${emp.first_name}`, 
-          subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, 
-          data: emp, 
-          type: 'employee',
-          isToday: true 
-      }));
-    } else {
-      let daysToShow = view === '3day' ? 3 : 7;
-      return Array.from({ length: daysToShow }).map((_, i) => {
-        const date = addDays(currentDate, i);
-        return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
-      });
-    }
-  }, [view, currentDate, employees]);
+  // --- EVENTOS BÁSICOS (Definidos antes para evitar errores de inicialización) ---
+  const handleApptClick = (appt: any) => { 
+      if (!isDragging && !resizing) { 
+          setTooltipData(null); 
+          setSelectedAppt(appt); 
+          setIsDetailOpen(true); 
+      }
+  };
 
+  const handleMouseEnter = (e: React.MouseEvent, appt: any) => { 
+      if (!isDragging && !resizing) { 
+          const cid = appt.appointment?.client?.id; 
+          if(cid) setHoveredClient(cid); 
+          tooltipTimeoutRef.current = setTimeout(() => { 
+              setTooltipData(appt); 
+              setTooltipPos({ x: e.clientX, y: e.clientY }); 
+          }, 400); 
+      }
+  };
+
+  const handleMouseLeave = () => { 
+      if(tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current); 
+      setTooltipData(null); 
+      setHoveredClient(null); 
+  };
+
+  const updateAppointment = async (id: string, newStart: Date, newEnd: Date, newColId?: string) => {
+    if (!canEdit) { toast.error("No tienes permisos para modificar citas."); return; }
+    try {
+      let updatePayload: any = { start_time: newStart.toISOString(), end_time: newEnd.toISOString() };
+      if (view === 'day' && newColId) updatePayload.employee_id = newColId;
+      await supabase.from('appointment_services').update(updatePayload).eq('id', id);
+      toast.success("Actualizado"); handleRefresh();
+    } catch (e: any) { toast.error(e.message); setLocalAppts([...appointments]); }
+  };
+
+  // --- LOGICA DE TOUCH/DRAG (Ahora 'columns' y 'handleApptClick' ya existen) ---
+  const handleTouchMove = useCallback((e: TouchEvent, appt: any, col: ColumnData, colIndex: number) => {
+    if (!isDragging || !touchDragStart) return;
+    const touch = e.touches[0];
+    const distance = Math.sqrt(Math.pow(touch.clientX - touchDragStart.x, 2) + Math.pow(touch.clientY - touchDragStart.y, 2));
+    
+    if (distance > MIN_DRAG_DISTANCE && !isDragStarted) {
+        setIsDragStarted(true);
+        e.preventDefault(); 
+    }
+    if (!isDragStarted) return;
+    dragDistanceRef.current = distance;
+    
+    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
+    const columnElement = elements.find(el => el.hasAttribute('data-column-id'));
+    
+    if (columnElement) {
+        const colId = columnElement.getAttribute('data-column-id');
+        //const rect = columnElement.getBoundingClientRect(); // No se usa por ahora pero util para debug
+        const column = columns.find(c => c.id === colId);
+        if (column) {
+            const rect = columnElement.getBoundingClientRect();
+            const snappedMinutes = Math.round(Math.max(0, (touch.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
+            const baseDate = column.type === 'date' ? column.data : currentDate;
+            const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
+            const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
+            
+            const newGhost = { apptId: appt.id, colId: column.id, colIndex: columns.findIndex(c => c.id === column.id), startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
+            setDragGhost(newGhost);
+            ghostRef.current = newGhost;
+        }
+    }
+  }, [isDragging, touchDragStart, isDragStarted, columns, currentDate, PIXELS_PER_MINUTE, SNAP_MINUTES, START_HOUR]);
+
+  const handleTouchEnd = useCallback((e: TouchEvent, appt: any) => {
+    if (!isDragging) return;
+    e.preventDefault();
+    if (dragDistanceRef.current < MIN_DRAG_DISTANCE) {
+        setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
+        handleApptClick(appt);
+        return;
+    }
+    const final = ghostRef.current;
+    if (final) {
+        setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a));
+        updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined);
+    }
+    setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
+  }, [isDragging, view, updateAppointment]);
+
+  const handleDragStart = (e: React.DragEvent | React.TouchEvent, appt: any) => { 
+      if (!canEdit) return;
+      
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
+          e.preventDefault();
+          return;
+      }
+
+      e.stopPropagation();
+      setTooltipData(null);
+      dragDistanceRef.current = 0;
+      
+      if ('dataTransfer' in e) {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData("apptId", appt.id);
+          
+          const dragImg = document.createElement('div');
+          dragImg.style.position = 'absolute';
+          dragImg.style.top = '-1000px';
+          dragImg.className = 'bg-blue-100 border-2 border-blue-400 rounded-lg p-2 shadow-lg';
+          dragImg.innerHTML = `<div class="font-bold text-sm text-blue-700">${appt.appointment?.pet?.name}</div>`;
+          document.body.appendChild(dragImg);
+          e.dataTransfer.setDragImage(dragImg, 50, 25);
+          setTimeout(() => document.body.removeChild(dragImg), 0);
+          
+          setTimeout(() => setIsDragging(appt.id), 0);
+      }
+      
+      if ('touches' in e) {
+          const touch = e.touches[0];
+          setTouchDragStart({ x: touch.clientX, y: touch.clientY, time: Date.now() });
+          setIsDragging(appt.id);
+      }
+  };
+
+  const handleDragOver = (e: React.DragEvent, col: ColumnData, colIndex: number) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!isDragging) return;
+    const appt = localAppts.find(a => a.id === isDragging);
+    if (!appt) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const snappedMinutes = Math.round(Math.max(0, (e.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
+    const baseDate = col.type === 'date' ? col.data : currentDate;
+    const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
+    const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
+    
+    const newGhost = { apptId: appt.id, colId: col.id, colIndex, startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
+    if (!ghostRef.current || ghostRef.current.colId !== newGhost.colId || Math.abs(ghostRef.current.top - newGhost.top) > 1) { 
+        ghostRef.current = newGhost; 
+        setDragGhost(newGhost); 
+    }
+  };
+  
+  const handleDrop = async (e: React.DragEvent) => { 
+      e.preventDefault(); e.stopPropagation(); 
+      const final = ghostRef.current; 
+      if (final) { 
+          setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { 
+              ...a, 
+              start_time: final.startTime.toISOString(), 
+              end_time: final.endTime.toISOString(), 
+              employee_id: view === 'day' ? final.colId : a.employee_id 
+          } : a)); 
+          
+          updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined);
+      } 
+      ghostRef.current = null; 
+      setIsDragging(null); 
+      setDragGhost(null); 
+  };
+
+  const getAppointmentsForColumn = useCallback((col: ColumnData) => {
+    const colAppts = localAppts.filter(appt => {
+      const apptStart = parseISO(appt.start_time);
+      if (view === 'day') return appt.employee_id === col.id && isSameDay(apptStart, currentDate);
+      else return format(apptStart, 'yyyy-MM-dd') === col.id;
+    });
+    
+    const items = colAppts.map(appt => {
+      const start = parseISO(appt.start_time);
+      const end = parseISO(appt.end_time);
+      const top = Math.max(0, ((start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60)) * PIXELS_PER_MINUTE);
+      let height = Math.max(20, differenceInMinutes(end, start) * PIXELS_PER_MINUTE);
+      if (resizing && resizing.apptId === appt.id) {
+          height = Math.max(20, resizing.newDuration * PIXELS_PER_MINUTE);
+      }
+      return { ...appt, _start: start.getTime(), _end: end.getTime(), top, height };
+    });
+
+    const lanes: any[][] = [];
+    items.sort((a,b) => a._start - b._start);
+    items.forEach(item => {
+        let placed = false;
+        for(let i=0; i<lanes.length; i++) { if(lanes[i][lanes[i].length-1]._end <= item._start) { lanes[i].push(item); item.laneIndex = i; placed=true; break; } }
+        if(!placed) { lanes.push([item]); item.laneIndex = lanes.length-1; }
+    });
+    return items.map(item => ({ ...item, widthPct: 100/lanes.length, leftPct: (100/lanes.length) * item.laneIndex }));
+  }, [localAppts, view, currentDate, resizing, PIXELS_PER_MINUTE]);
+
+  const timeSlots = useMemo(() => {
+    const slots = [];
+    let time = setHours(startOfDay(currentDate), START_HOUR);
+    const endTime = setHours(startOfDay(currentDate), END_HOUR);
+    while (time <= endTime) { slots.push(time); time = addMinutes(time, 30); }
+    return slots;
+  }, [currentDate, START_HOUR, END_HOUR]);
+
+  // --- RENDERING AUXILIAR ---
   const calculateColumnData = useCallback((col: ColumnData) => {
       let colAppointments = [];
       let capacityMinutes = 0;
-      
       const checkDate = col.type === 'date' ? col.data : currentDate;
       const holiday = holidays.find(h => h.date === format(checkDate, 'yyyy-MM-dd'));
       const isHoliday = !!holiday;
-
       if (col.type === 'employee') {
           colAppointments = localAppts.filter(a => a.employee_id === col.id && isSameDay(parseISO(a.start_time), currentDate));
           if (!isHoliday) { 
@@ -325,14 +497,12 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
               });
           }
       }
-
       const bookedMinutes = colAppointments.reduce((acc, curr) => {
           if (resizing && resizing.apptId === curr.id) return acc + resizing.newDuration;
           const start = parseISO(curr.start_time);
           const end = parseISO(curr.end_time);
           return acc + differenceInMinutes(end, start);
       }, 0);
-
       return { colAppointments, capacityMinutes, bookedMinutes };
   }, [localAppts, schedules, currentDate, employees, resizing, holidays]);
 
@@ -341,20 +511,17 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       let totalCapacity = 0;
       let totalBooked = 0;
       const allUniquePets = new Set();
-
       columns.forEach(col => {
           const { colAppointments, capacityMinutes, bookedMinutes } = calculateColumnData(col);
           totalCapacity += capacityMinutes;
           totalBooked += bookedMinutes;
           colAppointments.forEach(appt => { if (appt.appointment?.pet?.id) allUniquePets.add(appt.appointment.pet.id); });
       });
-
       const percentage = totalCapacity > 0 ? Math.round((totalBooked / totalCapacity) * 100) : 0;
       let color = 'bg-red-500';
       let textColor = 'text-red-600';
       if (percentage >= 85) { color = 'bg-emerald-500'; textColor = 'text-emerald-600'; }
       else if (percentage >= 65) { color = 'bg-amber-500'; textColor = 'text-amber-600'; }
-
       return { percentage, color, textColor, totalPets: allUniquePets.size };
   }, [columns, calculateColumnData, view]);
 
@@ -364,21 +531,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const uniquePets = new Set();
       colAppointments.forEach(appt => { if (appt.appointment?.pet?.id) uniquePets.add(appt.appointment.pet.id); });
       const count = uniquePets.size;
-
       let barColor = 'bg-red-500'; 
       if (percentage >= 85) barColor = 'bg-emerald-500'; 
       else if (percentage >= 65) barColor = 'bg-amber-500'; 
-
       return { count, percentage, barColor };
   }, [calculateColumnData]);
-
-  const timeSlots = useMemo(() => {
-    const slots = [];
-    let time = setHours(startOfDay(currentDate), START_HOUR);
-    const endTime = setHours(startOfDay(currentDate), END_HOUR);
-    while (time <= endTime) { slots.push(time); time = addMinutes(time, 30); }
-    return slots;
-  }, [currentDate, START_HOUR, END_HOUR]);
 
   const monthDays = useMemo(() => {
       if (view !== 'month') return [];
@@ -410,12 +567,10 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const getAbsenceOverlay = useCallback((col: ColumnData) => {
       const TOTAL_HEIGHT = (END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE;
       const checkDate = col.type === 'date' ? col.data : currentDate;
-
       const holiday = holidays.find(h => h.date === format(checkDate, 'yyyy-MM-dd'));
       if (holiday) {
           return { height: TOTAL_HEIGHT, bgColor: 'bg-emerald-50', stripeColor: '#d1fae5', label: 'Día Festivo', note: holiday.name, icon: Flag, isHoliday: true };
       }
-
       if (col.type === 'employee') {
           const activeAbsence = absences.find(abs => {
               const rangeStart = parseISO(abs.start_date);
@@ -436,131 +591,34 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       return null;
   }, [absences, currentDate, START_HOUR, END_HOUR, PIXELS_PER_MINUTE, holidays]);
 
-  const getAppointmentsForColumn = useCallback((col: ColumnData) => {
-    const colAppts = localAppts.filter(appt => {
-      const apptStart = parseISO(appt.start_time);
-      if (view === 'day') return appt.employee_id === col.id && isSameDay(apptStart, currentDate);
-      else return format(apptStart, 'yyyy-MM-dd') === col.id;
-    });
-    const items = colAppts.map(appt => {
-      const start = parseISO(appt.start_time);
-      const end = parseISO(appt.end_time);
-      const top = Math.max(0, ((start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60)) * PIXELS_PER_MINUTE);
-      let height;
-      if (resizing && resizing.apptId === appt.id) {
-          height = Math.max(20, resizing.newDuration * PIXELS_PER_MINUTE);
-      } else {
-          height = Math.max(20, differenceInMinutes(end, start) * PIXELS_PER_MINUTE);
-      }
-      return { ...appt, _start: start.getTime(), _end: end.getTime(), top, height };
-    });
-    const lanes: any[][] = [];
-    items.sort((a,b) => a._start - b._start);
-    items.forEach(item => {
-        let placed = false;
-        for(let i=0; i<lanes.length; i++) { if(lanes[i][lanes[i].length-1]._end <= item._start) { lanes[i].push(item); item.laneIndex = i; placed=true; break; } }
-        if(!placed) { lanes.push([item]); item.laneIndex = lanes.length-1; }
-    });
-    return items.map(item => ({ ...item, widthPct: 100/lanes.length, leftPct: (100/lanes.length) * item.laneIndex }));
-  }, [localAppts, view, currentDate, resizing, PIXELS_PER_MINUTE]); 
-
-  const updateAppointment = async (id: string, newStart: Date, newEnd: Date, newColId?: string) => {
-    // PROTECCIÓN DE ROL
-    if (!canEdit) {
-        toast.error("No tienes permisos para modificar citas.");
-        return;
-    }
-    try {
-      let updatePayload: any = { start_time: newStart.toISOString(), end_time: newEnd.toISOString() };
-      if (view === 'day' && newColId) updatePayload.employee_id = newColId;
-      await supabase.from('appointment_services').update(updatePayload).eq('id', id);
-      toast.success("Actualizado"); handleRefresh();
-    } catch (e: any) { toast.error(e.message); setLocalAppts([...appointments]); }
-  };
-
-  const handleDragStart = (e: React.DragEvent, appt: any) => { 
-      // PROTECCIÓN DE ROL
-      if (!canEdit) return;
-      e.stopPropagation(); setTooltipData(null); e.dataTransfer.setData("apptId", appt.id); setTimeout(() => setIsDragging(appt.id), 0); 
-  };
-  
-  const handleDragOver = (e: React.DragEvent, col: ColumnData, colIndex: number) => {
-    e.preventDefault(); e.stopPropagation();
-    if (!isDragging) return;
-    const appt = localAppts.find(a => a.id === isDragging);
-    if (!appt) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const snappedMinutes = Math.round(Math.max(0, (e.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
-    const baseDate = col.type === 'date' ? col.data : currentDate;
-    const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
-    const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
-    const newGhost = { apptId: appt.id, colId: col.id, colIndex, startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
-    if (!ghostRef.current || ghostRef.current.colId !== newGhost.colId || Math.abs(ghostRef.current.top - newGhost.top) > 1) { ghostRef.current = newGhost; setDragGhost(newGhost); }
-  };
-  
-  const handleDrop = (e: React.DragEvent) => { 
-      e.preventDefault(); e.stopPropagation(); 
-      const final = ghostRef.current; 
-      if (final) { 
-          setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a)); 
-          updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined); 
-      } 
-      ghostRef.current = null; setIsDragging(null); setDragGhost(null); 
-  };
-  
-  const handleApptClick = (appt: any) => { if (!isDragging && !resizing) { setTooltipData(null); setSelectedAppt(appt); setIsDetailOpen(true); }};
-  const handleMouseEnter = (e: React.MouseEvent, appt: any) => { if(!isDragging && !resizing) { const cid = appt.appointment?.client?.id; if(cid) setHoveredClient(cid); tooltipTimeoutRef.current = setTimeout(() => { setTooltipData(appt); setTooltipPos({ x: e.clientX, y: e.clientY }); }, 400); }};
-  const handleMouseLeave = () => { if(tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current); setTooltipData(null); setHoveredClient(null); };
-
   return (
     <>
       <div className="flex flex-col h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
         <div className="flex flex-col lg:flex-row items-center justify-between px-4 py-3 bg-white border-b border-slate-200 gap-4">
-            <div className="flex items-center gap-2 w-full lg:w-auto">
-                <Button variant="outline" size="icon" className="h-9 w-9 text-slate-600 shrink-0" onClick={() => handleDateStep('prev')}><ChevronLeft size={16} /></Button>
-                <div className="relative group flex-1 lg:flex-none">
-                    <Button variant="outline" className={cn("h-9 gap-2 font-semibold w-full lg:min-w-[220px] justify-start text-left bg-white border-slate-300 text-slate-700 hover:bg-slate-50 relative z-10 pl-3")}>
-                        <CalendarIcon size={16} className="text-slate-500 mb-0.5"/>
-                        <span className="capitalize text-sm truncate">
-                            {view === 'month' ? format(currentDate, "MMMM yyyy", { locale: es }) : format(currentDate, "EEEE d 'de' MMMM", { locale: es })}
-                        </span>
+            <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={() => handleDateStep('prev')}><ChevronLeft size={16} /></Button>
+                <div className="relative group">
+                     <Button variant="outline" className="min-w-[200px] justify-start text-left pl-3 font-semibold">
+                        <CalendarIcon size={16} className="mr-2 text-slate-500"/>
+                        <span className="capitalize">{format(currentDate, "EEEE d MMMM", { locale: es })}</span>
                     </Button>
-                    <input type="date" className="absolute inset-0 opacity-0 cursor-pointer z-20 w-full h-full" value={format(currentDate, 'yyyy-MM-dd')} onClick={(e) => { try { (e.currentTarget as any).showPicker(); } catch(e){} }} onChange={(e) => handleNavigate('date', parseISO(e.target.value))} />
+                    <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={(e) => handleNavigate('date', parseISO(e.target.value))} />
                 </div>
-                <Button variant="outline" size="icon" className="h-9 w-9 text-slate-600 shrink-0" onClick={() => handleDateStep('next')}><ChevronRight size={16} /></Button>
-                <Button size="sm" variant="ghost" className="text-xs h-9 ml-1 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 shrink-0" onClick={() => handleNavigate('date', new Date())}>Hoy</Button>
+                <Button variant="outline" size="icon" onClick={() => handleDateStep('next')}><ChevronRight size={16} /></Button>
+                <Button size="sm" variant="ghost" onClick={() => handleNavigate('date', new Date())}>Hoy</Button>
             </div>
             
-            <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 w-full lg:w-auto justify-center">
-                {[{ id: 'day', label: 'Día' }, { id: '3day', label: '3 Días' }, { id: 'week', label: 'Semana' }, { id: 'month', label: 'Mes' }].map((v) => (
-                    <button key={v.id} onClick={() => handleNavigate('view', v.id)} className={cn("px-4 py-1.5 text-xs font-medium rounded-md transition-all flex-1 lg:flex-none text-center", view === v.id ? "bg-white text-slate-900 shadow-sm border border-slate-200" : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50")}>{v.label}</button>
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+                {['day', '3day', 'week', 'month'].map((v) => (
+                    <button key={v} onClick={() => handleNavigate('view', v)} className={cn("px-3 py-1 text-xs font-bold rounded-md transition-all", view === v ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700")}>
+                        {v === 'day' ? 'Día' : v === '3day' ? '3 Días' : v === 'week' ? 'Semana' : 'Mes'}
+                    </button>
                 ))}
             </div>
 
-            <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-                {globalStats && (
-                    <div className="flex items-center gap-3 bg-white border border-slate-200 shadow-sm rounded-lg px-3 py-1.5 h-9 mr-2">
-                        <div className="flex flex-col items-end leading-none border-r border-slate-100 pr-3 mr-1">
-                            <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wide">Ocupación Total</span>
-                            <div className="flex items-center gap-1.5">
-                                <span className={cn("text-xs font-bold", globalStats.textColor)}>{globalStats.percentage}%</span>
-                                <div className="h-1.5 w-12 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className={cn("h-full", globalStats.color)} style={{ width: `${globalStats.percentage}%` }}></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-slate-600">
-                            <PawPrint size={14} className="text-slate-400"/>
-                            <span className="text-xs font-bold">{globalStats.totalPets}</span>
-                        </div>
-                    </div>
-                )}
-
-                <Button variant="outline" size="icon" onClick={handleRefresh} className="h-9 w-9 text-slate-400 hover:text-slate-700 shrink-0"><Filter size={16} /></Button>
-                {/* SOLO ADMIN, MANAGER O RECEPTIONIST PUEDEN CREAR CITA */}
-                {canEdit && (
-                    <Button className="bg-slate-900 text-white hover:bg-slate-800 shadow-sm text-xs h-9 gap-2 shrink-0 px-4"><Plus size={16}/> <span>Nueva Cita</span></Button>
-                )}
+            <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={handleRefresh}><Filter size={16} /></Button>
+                {canEdit && <Button className="bg-blue-600 text-white gap-2"><Plus size={16}/> Nueva Cita</Button>}
             </div>
         </div>
 
@@ -655,7 +713,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                             const absenceOverlay = getAbsenceOverlay(col); 
 
                             return (
-                                <div key={col.id} className="flex-1 min-w-[150px] border-r border-slate-100 relative" style={{ minHeight: `${(END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE}px` }} onDragOver={(e) => handleDragOver(e, col, colIndex)}>
+                                <div key={col.id} className="flex-1 min-w-[150px] border-r border-slate-100 relative" style={{ minHeight: `${(END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE}px` }} onDragOver={(e) => handleDragOver(e, col, colIndex)} data-column-id={col.id}>
                                 {timeSlots.map((_, i) => <div key={i} style={{ height: `${30 * PIXELS_PER_MINUTE}px` }} className="border-b border-slate-50 border-dashed w-full pointer-events-none"></div>)}
                                 
                                 {!absenceOverlay && nonWorkingBlocks.map((block, i) => (<div key={i} className="absolute left-0 right-0 bg-slate-100/50 backdrop-grayscale z-10 pointer-events-none" style={{ top: block.top, height: block.height, backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, #e2e8f0 10px, #e2e8f0 12px)' }}></div>))}
@@ -677,20 +735,112 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                     const isDimmed = hoveredClient && hoveredClient !== appt.appointment?.client?.id;
                                     const isFamily = hoveredClient === appt.appointment?.client?.id;
                                     const isBeingResized = resizing && resizing.apptId === appt.id;
+                                    const isBeingDragged = isDragging === appt.id;
 
                                     return (
-                                    <div key={appt.id} draggable={!absenceOverlay && !resizing && canEdit} onDragStart={(e) => handleDragStart(e, appt)} onClick={(e) => { e.stopPropagation(); handleApptClick(appt); }} onMouseEnter={(e) => handleMouseEnter(e, appt)} onMouseLeave={handleMouseLeave}
-                                        className={cn("absolute rounded-lg shadow-sm border overflow-hidden cursor-pointer transition-all duration-200 ring-1 ring-white flex flex-col p-1.5 group/appt", styles.container, isDragging === appt.id ? "opacity-30" : "opacity-100", isDimmed ? "opacity-40 scale-95" : "hover:z-50 hover:shadow-lg", isFamily ? "ring-2 ring-offset-1 z-40 scale-[1.02] shadow-md" : "", isBeingResized ? "z-50 ring-2 ring-blue-400 shadow-xl scale-[1.02]" : "")}
-                                        style={{ top: `${appt.top}px`, height: `${appt.height}px`, left: `${appt.leftPct}%`, width: `${appt.widthPct}%`, zIndex: absenceOverlay ? 20 : 25, borderColor: isFamily ? stringToColor(appt.appointment?.client?.full_name||'') : undefined }}>
+                                    <div 
+                                        key={appt.id}
+                                        // MOUSE EVENTS
+                                        draggable={!absenceOverlay && !resizing && canEdit}
+                                        onDragStart={(e) => handleDragStart(e, appt)}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            // Solo abrir detalle si no hubo drag/resize
+                                            if (dragDistanceRef.current < MIN_DRAG_DISTANCE && !resizing) {
+                                                handleApptClick(appt);
+                                            }
+                                        }}
+                                        onMouseEnter={(e) => handleMouseEnter(e, appt)}
+                                        onMouseLeave={handleMouseLeave}
+                                        
+                                        // TOUCH EVENTS (NUEVO)
+                                        onTouchStart={(e) => {
+                                            // Solo iniciamos drag si no es resize
+                                            if (!absenceOverlay && !resizing && canEdit) {
+                                                // Check if target is resize handle
+                                                const target = e.target as HTMLElement;
+                                                if (!target.closest('.resize-handle')) {
+                                                    handleDragStart(e, appt);
+                                                }
+                                            }
+                                        }}
+                                        onTouchMove={(e: any) => {
+                                            if (isDragging && !resizing) {
+                                                handleTouchMove(e, appt, col, colIndex);
+                                            }
+                                        }}
+                                        onTouchEnd={(e: any) => {
+                                            if (isDragging && !resizing) {
+                                                handleTouchEnd(e, appt);
+                                            }
+                                        }}
+                                        
+                                        className={cn(
+                                            "absolute rounded-lg shadow-sm border overflow-hidden transition-all duration-200 ring-1 ring-white flex flex-col p-1.5 group/appt",
+                                            styles.container,
+                                            isBeingDragged ? "opacity-30 cursor-grabbing" : "opacity-100",
+                                            !isBeingDragged && !resizing && canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+                                            isDimmed ? "opacity-40 scale-95" : "hover:z-50 hover:shadow-lg",
+                                            isFamily ? "ring-2 ring-offset-1 z-40 scale-[1.02] shadow-md" : "",
+                                            isBeingResized ? "z-50 ring-2 ring-blue-400 shadow-xl scale-[1.02]" : ""
+                                        )}
+                                        style={{ 
+                                            top: `${appt.top}px`, 
+                                            height: `${appt.height}px`, 
+                                            left: `${appt.leftPct}%`, 
+                                            width: `${appt.widthPct}%`, 
+                                            zIndex: absenceOverlay ? 20 : isBeingDragged ? 30 : isBeingResized ? 35 : 25,
+                                            borderColor: isFamily ? stringToColor(appt.appointment?.client?.full_name||'') : undefined,
+                                            // Desactivar user-select durante drag
+                                            userSelect: isBeingDragged || isBeingResized ? 'none' : 'auto'
+                                        }}
+                                    >
                                         <div className={cn("absolute left-0 top-0 bottom-0 w-1", styles.accentBar)}></div>
+                                        
                                         <div className="pl-2 w-full overflow-hidden flex flex-col h-full pointer-events-none">
-                                            <div className="flex justify-between items-center w-full"><span className={cn("font-bold truncate text-[11px]", styles.text)}>{appt.appointment?.pet?.name}</span>{appt.height > 30 && <span className="text-[9px] opacity-60 font-mono ml-1 shrink-0">{format(parseISO(appt.start_time), 'HH:mm')} - {isBeingResized ? format(addMinutes(parseISO(appt.start_time), resizing.newDuration), 'HH:mm') : format(parseISO(appt.end_time), 'HH:mm')}</span>}</div>
-                                            {appt.height > 45 && (<div className="flex items-center gap-1 mt-auto"><CategoryIcon size={10} className={styles.subtext} /><span className={cn("font-medium uppercase tracking-tight line-clamp-1 text-[9px]", styles.subtext)}>{appt.service?.name}</span></div>)}
+                                            <div className="flex justify-between items-center w-full">
+                                                <span className={cn("font-bold truncate text-[11px]", styles.text)}>
+                                                    {appt.appointment?.pet?.name}
+                                                </span>
+                                                {appt.height > 30 && (
+                                                    <span className="text-[9px] opacity-60 font-mono ml-1 shrink-0">
+                                                        {format(parseISO(appt.start_time), 'HH:mm')} - {
+                                                            isBeingResized 
+                                                                ? format(addMinutes(parseISO(appt.start_time), resizing.newDuration), 'HH:mm')
+                                                                : format(parseISO(appt.end_time), 'HH:mm')
+                                                        }
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {appt.height > 45 && (
+                                                <div className="flex items-center gap-1 mt-auto">
+                                                    <CategoryIcon size={10} className={styles.subtext} />
+                                                    <span className={cn("font-medium uppercase tracking-tight line-clamp-1 text-[9px]", styles.subtext)}>
+                                                        {appt.service?.name}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                         
+                                        {/* Resize Handle - MEJORADO */}
                                         {!absenceOverlay && canEdit && (
-                                            <div className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize z-50 flex items-center justify-center opacity-0 group-hover/appt:opacity-100 hover:bg-slate-400/20 transition-opacity" onMouseDown={(e) => handleResizeStart(e, appt)} onTouchStart={(e) => handleResizeStart(e, appt)}>
-                                                <GripHorizontal className="w-3 h-3 text-slate-500/50" />
+                                            <div 
+                                                className={cn(
+                                                    "resize-handle absolute bottom-0 left-0 right-0 cursor-ns-resize z-50 flex items-center justify-center transition-all",
+                                                    "opacity-0 group-hover/appt:opacity-100 hover:bg-blue-400/20",
+                                                    // Hacer más grande en touch devices
+                                                    "h-3 md:h-4",
+                                                    isBeingResized && "opacity-100 bg-blue-400/30"
+                                                )}
+                                                onMouseDown={(e) => handleResizeStart(e, appt)}
+                                                onTouchStart={(e) => handleResizeStart(e, appt)}
+                                                // Prevenir que inicie drag
+                                                onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                            >
+                                                <GripHorizontal className={cn(
+                                                    "w-4 h-4 transition-colors",
+                                                    isBeingResized ? "text-blue-500" : "text-slate-500/50"
+                                                )} />
                                             </div>
                                         )}
                                     </div>
