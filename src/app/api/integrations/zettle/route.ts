@@ -6,97 +6,127 @@ import { subDays } from 'date-fns';
 export async function GET(request: Request) {
   const supabase = await createClient();
   
-  try {
-    // 1. Obtener reglas de clasificación (Grooming vs Tienda)
-    const { data: rules } = await supabase.from('revenue_classification_rules').select('*');
+  const { searchParams } = new URL(request.url);
+  const startParam = searchParams.get('startDate');
+  const endParam = searchParams.get('endDate');
+  // Fallback de fechas
+  const startDate = startParam || subDays(new Date(), 7).toISOString();
+  const endDate = endParam || undefined;
 
-    // 2. Traer ventas de Zettle (últimos 7 días)
-    const startDate = subDays(new Date(), 7).toISOString();
-    const data = await fetchRecentZettlePurchases(startDate);
+  try {
+    // 1. CARGAR ÚNICAMENTE EL CATÁLOGO (La única fuente de verdad)
+    const { data: catalogData } = await supabase.from('zettle_catalog').select('zettle_uuid, name, category');
     
-    if (!data || !data.purchases) {
-        return NextResponse.json({ success: false, message: "Zettle no devolvió datos recientes." });
+    const uuidMap = new Map();
+    const nameMap = new Map();
+    
+    catalogData?.forEach((c: any) => {
+        if (c.zettle_uuid) uuidMap.set(c.zettle_uuid, c.category);
+        // Normalizamos nombres para búsqueda insensible a mayúsculas
+        if (c.name) nameMap.set((c.name || '').trim().toLowerCase(), c.category);
+    });
+
+    // 2. TRAER VENTAS
+    const data = await fetchRecentZettlePurchases(startDate, endDate);
+    
+    if (!data || !data.purchases || data.purchases.length === 0) {
+        return NextResponse.json({ success: false, message: "No se encontraron ventas." });
     }
 
     let importedCount = 0;
-
-    // 3. Procesar y NORMALIZAR cada venta
+    
+    // 3. PROCESAR TRANSACCIONES
     for (const p of data.purchases) {
-      // Zettle envía el total en CENTAVOS. Lo convertimos a PESOS.
-      const totalAmount = (p.amount || 0) / 100;
-      const taxAmount = (p.vatAmount || 0) / 100;
+      
+      const rawAmount = p.amount || 0;
+      const gratuity = p.gratuityAmount || 0;
+      let totalAmount = (rawAmount - gratuity) / 100;
+      let taxAmount = (p.vatAmount || 0) / 100;
 
-      // Normalizamos los productos para que payroll-actions los entienda
+      const isRefund = p.type === 'REFUND' || totalAmount < 0;
+      if (isRefund && totalAmount > 0) totalAmount = totalAmount * -1;
+
       const rawProducts = p.products || [];
+      let ticketHasGrooming = false; 
+
       const normalizedItems = rawProducts.map((item: any) => {
-          const unitPrice = (item.unitPrice || 0) / 100; // Centavos a Pesos
-          const quantity = Number(item.quantity || 0);
-          const rowTotal = unitPrice * quantity;
+          let unitPrice = (item.unitPrice || 0) / 100;
+          let quantity = Number(item.quantity || 0);
+          const discountAmount = (item.discount?.amount || 0) / 100;
+
+          if (isRefund && quantity > 0) quantity = quantity * -1;
+          const rowTotal = (unitPrice * quantity) - discountAmount;
           
+          // --- LÓGICA ULTRA-ESTRICTA ---
+          let category = 'store'; // DEFAULT: Todo es tienda
+          let classified = false;
+
+          // A. BUSCAR POR ID EXACTO (Prioridad 1)
+          if (item.productUuid && uuidMap.has(item.productUuid)) {
+              category = uuidMap.get(item.productUuid);
+              classified = true;
+          }
+          else if (item.variantUuid && uuidMap.has(item.variantUuid)) {
+              category = uuidMap.get(item.variantUuid);
+              classified = true;
+          }
+
+          // B. BUSCAR POR NOMBRE EXACTO (Prioridad 2 - Para manuales que coinciden con catálogo)
+          if (!classified) {
+              const cleanName = (item.name || '').trim().toLowerCase();
+              if (cleanName && nameMap.has(cleanName)) {
+                  category = nameMap.get(cleanName);
+                  classified = true;
+              }
+          }
+
+          // NOTA: Si no cayó en A ni en B, se queda como 'store'. 
+          // Ya no hay reglas ni adivinanzas.
+
+          if (category === 'grooming') ticketHasGrooming = true;
+
           return {
-              name: item.name,
+              productUuid: item.productUuid,
+              variantUuid: item.variantUuid,
+              name: item.name || 'Sin Nombre',
               variant: item.variant,
               quantity: quantity,
               unit_price: unitPrice,
-              amount: rowTotal, // <--- ESTO es lo que busca la nómina
-              category: item.category?.name // Categoría original de Zettle
+              discount: discountAmount,
+              amount: rowTotal,
+              category: category
           };
       });
+
+      // --- CUADRE FINAL ---
+      const sumItems = normalizedItems.reduce((sum: number, i: any) => sum + i.amount, 0);
       
-      // Lógica de Clasificación (Grooming vs Store)
-      let hasGrooming = false;
-      let hasStore = false;
-
-      // Si no hay productos (cobro manual monto total), revisamos el monto
-      if (normalizedItems.length === 0) {
-          // Asumimos tienda por defecto en cobros manuales vacíos, a menos que haya una regla futura
-          hasStore = true;
-      } else {
-          for (const item of normalizedItems) {
-             const name = (item.name || '').toLowerCase();
-             const cat = (item.category || '').toLowerCase();
-             
-             let classified = false;
-             
-             // A. Buscar en Reglas Personalizadas
-             if (rules) {
-                 for (const rule of rules) {
-                     const keyword = rule.keyword.toLowerCase();
-                     const match = rule.match_type === 'exact' 
-                        ? name === keyword 
-                        : name.includes(keyword);
-                     
-                     if (match) {
-                         rule.category === 'grooming' ? hasGrooming = true : hasStore = true;
-                         classified = true;
-                         break;
-                     }
-                 }
-             }
-
-             // B. Si no hay regla, usar lógica por defecto
-             if (!classified) {
-                 if (
-                     cat.includes('grooming') || cat.includes('servicio') || 
-                     name.includes('corte') || name.includes('baño') || 
-                     name.includes('deslanado') || name.includes('cepillado')
-                 ) {
-                     hasGrooming = true;
-                 } else {
-                     hasStore = true;
-                 }
-             }
-          }
+      if (Math.abs(totalAmount - sumItems) > 0.05) {
+          const diff = totalAmount - sumItems;
+          // Si el ticket no tiene NADA de grooming confirmado por catálogo,
+          // el descuento se va a tienda.
+          const adjustmentCategory = ticketHasGrooming ? 'grooming' : 'store';
+          
+          normalizedItems.push({
+              name: isRefund ? "Ajuste de Devolución" : "Descuento Global / Ajuste",
+              quantity: 1,
+              unit_price: diff,
+              amount: diff,
+              category: adjustmentCategory 
+          });
       }
 
-      // Upsert en Supabase
+      // --- BANDERAS ---
+      const hasGrooming = normalizedItems.some((i: any) => i.category === 'grooming');
+      const hasStore = normalizedItems.some((i: any) => i.category === 'store') || !hasGrooming;
+
       const { error } = await supabase.from('sales_transactions').upsert({
         zettle_id: p.purchaseUUID,
         timestamp: p.timestamp,
-        total_amount: totalAmount, // Guardado en Pesos
+        total_amount: totalAmount, 
         tax_amount: taxAmount,
         payment_method: p.paymentMethod,
-        items: normalizedItems,    // Guardamos el JSON normalizado con 'amount'
+        items: normalizedItems,
         is_grooming: hasGrooming,
         is_store: hasStore
       }, { onConflict: 'zettle_id' });
@@ -106,11 +136,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ 
         success: true, 
-        message: `Sincronización API completada. ${importedCount} ventas procesadas correctamente.` 
+        message: `Sincronización Estricta (Solo Catálogo): ${importedCount} ventas procesadas.` 
     });
 
   } catch (error: any) {
-    console.error(error);
+    console.error("Sync Error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

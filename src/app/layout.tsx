@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./globals.css";
+import "@/styles/base.css";
 import { Toaster } from "@/components/ui/sonner"; // Asegúrate que la ruta sea correcta
 import DashboardShell from "@/components/DashboardShell"; 
 
@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Tail Society OS",
-  description: "Gestión Veterinaria",
+  description: "SaaS de Gestion Empresarial",
 };
 
 export default function RootLayout({

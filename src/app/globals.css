@@ -55,12 +55,5 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Corrección de desbordamiento */
-    overflow-x: hidden; 
   }
-}
-
-/* Utilidad para cortar texto largo */
-.truncate-text {
-  @apply truncate max-w-[150px] inline-block align-bottom;
 }

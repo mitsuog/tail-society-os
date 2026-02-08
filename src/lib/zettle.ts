@@ -1,9 +1,9 @@
 // src/lib/zettle.ts
-const CLIENT_ID = process.env.ZETTLE_CLIENT_ID!;
-const API_KEY = process.env.ZETTLE_API_KEY!; // Esta es la "assertion" lista para usar
 
-// 1. Obtener Token de Acceso (Exchange)
-// Canjeamos tu API Key permanente por un token temporal de 2 horas
+const CLIENT_ID = process.env.ZETTLE_CLIENT_ID!;
+const API_KEY = process.env.ZETTLE_API_KEY!;
+
+// 1. Obtener Token de Acceso
 async function getAccessToken() {
   const params = new URLSearchParams();
   params.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
@@ -17,37 +17,86 @@ async function getAccessToken() {
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Zettle Auth Error Details:", errorText);
-    throw new Error(`Error Auth Zettle: ${response.status} ${response.statusText}`);
+    const txt = await response.text();
+    throw new Error(`Error Auth Zettle (${response.status}): ${txt}`);
   }
-
   const data = await response.json();
   return data.access_token;
 }
 
-// 2. Obtener Ventas Recientes
-export async function fetchRecentZettlePurchases(startDate: string) {
+// 2. Traer Ventas (Con Paginación Automática y Cierre de Día Correcto)
+export async function fetchRecentZettlePurchases(startDate: string, endDate?: string) {
+  try {
+    const token = await getAccessToken();
+    let allPurchases: any[] = [];
+    let moreDataAvailable = true;
+    let lastHash = '';
+
+    // AJUSTE DE FECHA: Asegurar que incluya hasta el último segundo del día final
+    let finalEndDate = endDate;
+    if (endDate && endDate.length === 10) { 
+        finalEndDate = `${endDate}T23:59:59`;
+    }
+
+    console.log(`📡 Zettle Sync: Buscando desde ${startDate} hasta ${finalEndDate || 'Hoy'}`);
+
+    while (moreDataAvailable) {
+        let url = `https://purchase.izettle.com/purchases/v2?startDate=${startDate}&limit=100&descending=true`;
+        
+        if (finalEndDate) url += `&endDate=${finalEndDate}`;
+        if (lastHash) url += `&lastPurchaseHash=${lastHash}`;
+
+        const response = await fetch(url, {
+            headers: { 
+                'Authorization': `Bearer ${token}`, 
+                'Content-Type': 'application/json' 
+            }
+        });
+
+        if (!response.ok) throw new Error(`Error Zettle API: ${response.statusText}`);
+        
+        const data = await response.json();
+        
+        if (data.purchases && data.purchases.length > 0) {
+            allPurchases = [...allPurchases, ...data.purchases];
+            lastHash = data.lastPurchaseHash; // Llave para siguiente página
+            
+            // Si devuelve menos de 100, es la última página
+            if (data.purchases.length < 100) moreDataAvailable = false;
+        } else {
+            moreDataAvailable = false;
+        }
+    }
+
+    console.log(`✅ Zettle Sync: ${allPurchases.length} transacciones recuperadas.`);
+    return { purchases: allPurchases };
+
+  } catch (error) {
+    console.error("❌ Zettle Service Error:", error);
+    return { purchases: [] };
+  }
+}
+
+// 3. NUEVO: Traer Librería de Productos (Para el Catálogo Maestro)
+export async function fetchZettleProductLibrary() {
   try {
     const token = await getAccessToken();
     
-    // Traemos las últimas 50 ventas desde la fecha indicada
-    const url = `https://purchase.izettle.com/purchases/v2?startDate=${startDate}&limit=50&descending=true`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+    // Endpoint oficial para traer todos los productos de la cuenta
+    const response = await fetch('https://products.izettle.com/organizations/self/library', {
+        headers: { 
+            'Authorization': `Bearer ${token}`, 
+            'Content-Type': 'application/json' 
+        }
     });
 
-    if (!response.ok) {
-      throw new Error(`Error Fetching Purchases: ${response.statusText}`);
-    }
+    if (!response.ok) throw new Error(`Error fetching library: ${response.statusText}`);
+    
+    const data = await response.json();
+    return data.products || []; 
 
-    return await response.json();
   } catch (error) {
-    console.error("Zettle Service Error:", error);
-    return null; // Retornamos null para manejarlo suavemente en el frontend
+    console.error("Zettle Library Error:", error);
+    return [];
   }
 }
