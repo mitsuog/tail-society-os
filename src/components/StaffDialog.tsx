@@ -11,8 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Clock, Plane, Trash2, Sparkles, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { Loader2, Clock, Plane, Trash2, Banknote, History, PlusCircle } from 'lucide-react';
+import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface StaffDialogProps {
@@ -55,6 +55,11 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
       note: ''
   });
 
+  // Datos de Contratos (NÓMINA)
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [newContractAmount, setNewContractAmount] = useState('');
+  const [newContractDate, setNewContractDate] = useState('');
+
   useEffect(() => {
     if (open) {
         if (employeeToEdit) {
@@ -64,6 +69,7 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
             setColor(employeeToEdit.color || '#a855f7');
             fetchSchedules(employeeToEdit.id);
             fetchAbsences(employeeToEdit.id);
+            fetchContracts(employeeToEdit.id);
         } else {
             resetForm();
         }
@@ -75,7 +81,10 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
       setFirstName(''); setLastName(''); setRole('stylist'); setColor('#a855f7');
       setSchedules(DAYS_OF_WEEK.map(d => ({ day_of_week: d.id, start_time: '10:00', end_time: '18:30', is_working: d.id !== 0 })));
       setAbsences([]);
+      setContracts([]);
       setNewAbsence({ start_date: '', end_date: '', type: 'vacation', note: '' });
+      setNewContractAmount('');
+      setNewContractDate(new Date().toISOString().split('T')[0]);
   };
 
   const fetchSchedules = async (empId: string) => {
@@ -93,10 +102,57 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
       if (data) setAbsences(data);
   };
 
+  const fetchContracts = async (empId: string) => {
+      const { data } = await supabase.from('employee_contracts')
+        .select('*')
+        .eq('employee_id', empId)
+        .order('start_date', { ascending: false });
+      if (data) setContracts(data);
+  };
+
   const handleScheduleChange = (dayId: number, field: string, value: any) => {
       setSchedules(prev => prev.map(s => s.day_of_week === dayId ? { ...s, [field]: value } : s));
   };
 
+  // --- LÓGICA DE CONTRATOS ---
+  const handleAddContract = async () => {
+    if (!newContractAmount || !newContractDate) return toast.error("Monto y fecha requeridos");
+    if (!employeeToEdit) return toast.error("Guarda el empleado primero");
+
+    setLoading(true);
+    try {
+        // 1. Cerrar el contrato activo anterior (si existe)
+        const currentActive = contracts.find(c => c.is_active);
+        if (currentActive) {
+            // La fecha fin del anterior es un día antes del nuevo
+            const endDate = format(subDays(new Date(newContractDate), 1), 'yyyy-MM-dd');
+            
+            await supabase.from('employee_contracts')
+                .update({ is_active: false, end_date: endDate })
+                .eq('id', currentActive.id);
+        }
+
+        // 2. Crear el nuevo contrato
+        const { error } = await supabase.from('employee_contracts').insert([{
+            employee_id: employeeToEdit.id,
+            base_salary_weekly: parseFloat(newContractAmount),
+            start_date: newContractDate,
+            is_active: true
+        }]);
+
+        if(error) throw error;
+        
+        toast.success("Nuevo sueldo asignado");
+        setNewContractAmount('');
+        fetchContracts(employeeToEdit.id);
+    } catch (e: any) { 
+        toast.error(e.message); 
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // --- LÓGICA DE AUSENCIAS ---
   const handleAddAbsence = async () => {
       if (!newAbsence.start_date || !newAbsence.end_date) return toast.error("Fechas requeridas");
       if (!employeeToEdit) return toast.error("Guarda el empleado primero");
@@ -112,7 +168,7 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
           if(error) throw error;
           toast.success("Ausencia registrada");
           fetchAbsences(employeeToEdit.id);
-          setNewAbsence({ ...newAbsence, note: '' }); // Reset nota pero mantener fechas por comodidad
+          setNewAbsence({ ...newAbsence, note: '' }); 
       } catch (e: any) { toast.error(e.message); }
   };
 
@@ -164,15 +220,16 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
       <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 py-4 border-b border-slate-100 bg-white z-10">
           <DialogTitle>{employeeToEdit ? 'Gestionar Empleado' : 'Nuevo Miembro'}</DialogTitle>
-          <DialogDescription>Configuración de perfil, turnos y ausencias.</DialogDescription>
+          <DialogDescription>Configuración de perfil, turnos, ausencias y contratos.</DialogDescription>
         </DialogHeader>
         
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
             <div className="px-6 pt-2 bg-white">
-                <TabsList className="grid w-full grid-cols-3 bg-slate-100">
+                <TabsList className="grid w-full grid-cols-4 bg-slate-100">
                     <TabsTrigger value="details">Perfil</TabsTrigger>
-                    <TabsTrigger value="schedule">Horario Base</TabsTrigger>
+                    <TabsTrigger value="schedule">Horario</TabsTrigger>
                     <TabsTrigger value="absences" disabled={!employeeToEdit}>Ausencias</TabsTrigger>
+                    <TabsTrigger value="contracts" disabled={!employeeToEdit}>Contratos</TabsTrigger>
                 </TabsList>
             </div>
 
@@ -195,6 +252,11 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
                                     <SelectItem value="reception">Recepción</SelectItem>
                                 </SelectContent>
                             </Select>
+                            <p className="text-[10px] text-slate-500 mt-1">
+                                {role === 'reception' 
+                                    ? '* Gana comisión sobre Grooming + Tienda' 
+                                    : '* Gana comisión sobre Grooming'}
+                            </p>
                         </div>
                         <div className="space-y-2">
                             <Label>Color</Label>
@@ -233,6 +295,7 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
 
                 {/* TAB 3: AUSENCIAS */}
                 <TabsContent value="absences" className="space-y-4 mt-0">
+                    {/* ... (Mantengo tu código de ausencias igual, es perfecto) ... */}
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3">
                         <div className="flex gap-2">
                             <div className="flex-1 space-y-1">
@@ -287,6 +350,72 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
                         </div>
                     </div>
                 </TabsContent>
+
+                {/* TAB 4: CONTRATOS (NUEVO) */}
+                <TabsContent value="contracts" className="space-y-4 mt-0">
+                    <div className="bg-green-50 p-3 rounded-lg border border-green-200 space-y-3">
+                        <div className="flex items-center gap-2 mb-1">
+                            <Banknote className="text-green-700" size={16} />
+                            <h4 className="text-xs font-bold text-green-800 uppercase tracking-wider">Nuevo Sueldo Base</h4>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Monto Semanal ($)</Label>
+                                <Input 
+                                    type="number" 
+                                    className="h-9 bg-white" 
+                                    placeholder="0.00"
+                                    value={newContractAmount} 
+                                    onChange={(e) => setNewContractAmount(e.target.value)} 
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Vigente desde</Label>
+                                <Input 
+                                    type="date" 
+                                    className="h-9 bg-white" 
+                                    value={newContractDate} 
+                                    onChange={(e) => setNewContractDate(e.target.value)} 
+                                />
+                            </div>
+                        </div>
+                        <Button size="sm" onClick={handleAddContract} disabled={loading} className="w-full bg-green-700 hover:bg-green-800 text-white">
+                            {loading ? <Loader2 className="animate-spin h-3 w-3"/> : <PlusCircle size={14} className="mr-2"/>}
+                            Asignar Nuevo Sueldo
+                        </Button>
+                        <p className="text-[10px] text-green-700 text-center">
+                            * Al crear un nuevo sueldo, el anterior se cerrará automáticamente un día antes de la fecha elegida.
+                        </p>
+                    </div>
+
+                    <div className="space-y-2 mt-4">
+                        <div className="flex items-center gap-2 text-slate-500 mb-2">
+                            <History size={14} />
+                            <h4 className="text-xs font-bold uppercase tracking-wider">Historial Salarial</h4>
+                        </div>
+                        
+                        {contracts.length === 0 && <p className="text-xs text-slate-400 italic text-center py-4">No hay historial de sueldos.</p>}
+                        
+                        <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                            {contracts.map((contract) => (
+                                <div key={contract.id} className={`flex items-center justify-between p-3 rounded-lg border ${contract.is_active ? 'border-green-200 bg-green-50/50' : 'border-slate-100 bg-white'} shadow-sm`}>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-slate-800">
+                                                ${parseFloat(contract.base_salary_weekly).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                            </span>
+                                            {contract.is_active && <Badge className="text-[10px] bg-green-600 h-5">ACTIVO</Badge>}
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">
+                                            Desde: {format(new Date(contract.start_date), 'd MMM yyyy', {locale: es})}
+                                            {contract.end_date && ` - Hasta: ${format(new Date(contract.end_date), 'd MMM yyyy', {locale: es})}`}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </TabsContent>
             </div>
         </Tabs>
 
@@ -294,7 +423,7 @@ export default function StaffDialog({ open, onOpenChange, employeeToEdit, onSucc
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cerrar</Button>
             <Button onClick={handleSubmit} disabled={loading} className="bg-slate-900 text-white">
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                Guardar Configuración
+                Guardar Cambios
             </Button>
         </div>
       </DialogContent>
