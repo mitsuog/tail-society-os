@@ -467,7 +467,7 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                                 <Select value={status} onValueChange={handleStatusChange} disabled={loading}>
                                     <SelectTrigger className={cn("h-7 text-xs font-bold border-0 shadow-sm ring-1 ring-slate-200 w-full md:w-[140px]", statusInfo.bg, statusInfo.color)}>
                                         <div className="flex items-center gap-2">
-                                            <statusInfo.icon size={12} className={statusInfo.color}/> 
+                                            {/* CORRECCIÓN: Quitamos el icono manual y dejamos solo SelectValue */}
                                             <SelectValue />
                                         </div>
                                     </SelectTrigger>
