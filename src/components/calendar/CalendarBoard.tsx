@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -89,14 +89,26 @@ const getServiceCategoryStyles = (category: string = 'general') => {
 const getInitials = (first: string, last?: string) => `${first?.charAt(0) || ''}${last?.charAt(0) || ''}`.toUpperCase();
 const stringToColor = (str: string) => { let hash = 0; for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); } return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`; };
 
-// --- Tooltip Component ---
+// --- Tooltip Component (CORREGIDO) ---
 const AppointmentTooltip = ({ data, position, userRole }: { data: any, position: { x: number, y: number } | null, userRole: string }) => {
     if (!data || !position) return null;
-    const style: React.CSSProperties = { top: position.y + 10, left: position.x + 10, position: 'fixed', zIndex: 9999 };
+
+    // Cálculo de posición antes de crear el objeto CSSProperties
+    let left = position.x + 10;
+    let top = position.y + 10;
+
     if (typeof window !== 'undefined') {
-        if (position.x > window.innerWidth - 220) style.left = position.x - 210;
-        if (position.y > window.innerHeight - 150) style.top = position.y - 140;
+        if (position.x > window.innerWidth - 220) left = position.x - 210;
+        if (position.y > window.innerHeight - 150) top = position.y - 140;
     }
+
+    const style: CSSProperties = { 
+        top, 
+        left, 
+        position: 'fixed', 
+        zIndex: 9999 
+    };
+
     const styles = getServiceCategoryStyles(data.service?.category);
     const CategoryIcon = styles.icon;
     let clientName = data.appointment?.client?.full_name || '';
@@ -163,12 +175,14 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const searchParams = useSearchParams();
 
   // --- 1. ESTADO LOCAL (Optimistic UI) ---
-  // Esto permite que la fecha cambie inmediatamente sin esperar al router
   const [dateState, setDateState] = useState(currentDate);
   const [viewState, setViewState] = useState(view);
 
-  // Sincronizar estado local si las props cambian externamente (ej: navegación atrás/adelante navegador)
-  useEffect(() => { setDateState(currentDate); }, [currentDate]);
+  // Sincronizar estado local si las props cambian externamente
+  useEffect(() => { 
+      if (!isSameDay(currentDate, dateState)) setDateState(currentDate);
+  }, [currentDate]);
+  
   useEffect(() => { setViewState(view); }, [view]);
 
   const START_HOUR = 9;
@@ -176,7 +190,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const PIXELS_PER_MINUTE = 1.8; 
   const SNAP_MINUTES = 15; 
 
-  // Usamos dateState y viewState en lugar de las props directas
   const columns = useMemo<ColumnData[]>(() => {
     if (viewState === 'day') {
       return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
@@ -215,13 +228,10 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const canEdit = useMemo(() => ['admin', 'manager', 'receptionist'].includes(userRole || ''), [userRole]);
   const handleRefresh = useCallback(() => { setRefreshKey(prev => prev + 1); }, []);
 
-  // --- 2. MANEJO DE NAVEGACIÓN MEJORADO ---
   const handleNavigate = (type: 'date' | 'view', value: any) => {
-    // Actualizamos LOCALMENTE primero (inmediato)
     if (type === 'date') setDateState(value);
     if (type === 'view') setViewState(value);
 
-    // Luego actualizamos la URL (persistencia)
     const params = new URLSearchParams(searchParams.toString());
     if (type === 'date') params.set('date', format(value, 'yyyy-MM-dd'));
     else if (type === 'view') params.set('view', value);
@@ -264,7 +274,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       if (holData) setHolidays(holData);
     };
     fetchData();
-  }, [dateState, viewState, refreshKey, supabase]); // Dependencias actualizadas a estado local
+  }, [dateState, viewState, refreshKey, supabase]);
 
   // --- RESIZE LOGIC ---
   useEffect(() => {
@@ -779,10 +789,29 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     </div>
                 </div>
             ) : (
-                <div className="flex flex-col min-w-[1000px] h-full relative">
+                // --- VISTA DIARIA / SEMANAL / 3 DÍAS ---
+                // KEY={viewState} ES CRÍTICO: Fuerza el renderizado completo al cambiar vista para evitar el bug visual
+                <div 
+                    key={viewState} 
+                    className="flex flex-col min-w-[1000px] h-full relative"
+                >
+                    
+                    {/* CABECERA DE COLUMNAS */}
                     <div className="flex sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm w-full">
-                        <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[100px]"></div>
+                        <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[100px] flex items-center justify-center">
+                            <Clock size={16} className="text-slate-300" />
+                        </div>
                         <div className="flex flex-1">
+                            
+                            {/* ESTADO VACÍO: SI NO HAY DATOS, MOSTRAR AVISO */}
+                            {columns.length === 0 && (
+                                <div className="w-full h-[100px] flex items-center justify-center text-slate-400 text-sm italic border-r border-slate-200 bg-slate-50/50">
+                                    {viewState === 'day' 
+                                        ? `Sin empleados activos (${employees.length} cargados)` 
+                                        : 'No hay fechas disponibles'}
+                                </div>
+                            )}
+
                             {columns.map((col) => {
                                 const stats = getColumnStats(col);
                                 return (

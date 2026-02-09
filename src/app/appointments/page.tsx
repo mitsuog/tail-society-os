@@ -2,7 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import { parseISO, isValid } from 'date-fns';
 import CalendarBoard from '@/components/calendar/CalendarBoard';
 
-// Forzamos que esta página sea dinámica para que no cachee los empleados
+// Forzamos render dinámico para evitar caché de empleados antiguos
 export const dynamic = 'force-dynamic';
 
 export default async function AppointmentsPage({
@@ -26,7 +26,7 @@ export default async function AppointmentsPage({
   const currentView = (params.view as 'day' | 'week' | '3day' | 'month') || 'day';
 
   // 3. Carga de Empleados
-  // CORRECCIÓN IMPORTANTE: Usamos 'active' en lugar de 'is_active'
+  // CRÍTICO: Usamos 'active' (tu corrección local) porque es el nombre real en Supabase
   const { data: employees } = await supabase
     .from('employees')
     .select('*')
@@ -34,8 +34,9 @@ export default async function AppointmentsPage({
     .order('first_name');
 
   return (
-    <div className="h-full w-full flex flex-col p-0 md:p-2 overflow-hidden">
-      <div className="flex-1 w-full h-full min-h-0">
+    // FIX CSS: Usamos la estructura robusta (h-full, bg-white) para que el scroll funcione bien
+    <div className="w-full h-full flex flex-col overflow-hidden bg-white">
+      <div className="flex-1 w-full h-full min-h-0 relative">
         <CalendarBoard 
             currentDate={selectedDate} 
             view={currentView} 
