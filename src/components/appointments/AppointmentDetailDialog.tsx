@@ -14,13 +14,13 @@ import { toast } from "sonner";
 import { 
   User, Phone, Calendar, Clock, Scissors, Droplets, Sparkles, Box, 
   Check, X, Trash2, Save, Loader2, Plus, ChevronsUpDown, AlertTriangle, History,
-  Ruler, MessageCircle, Copy, PhoneCall, ExternalLink, 
+  Ruler, MessageCircle, Copy, PhoneCall, 
   CheckCircle2, PlayCircle, StopCircle, AlertCircle as AlertCircleIcon
 } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
 } from "@/components/ui/command";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -133,7 +133,7 @@ function ClientContactPopover({ client }: { client: any }) {
                             <User size={14} className="text-slate-500"/> 
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-sm font-medium leading-none">{client?.full_name || 'Cliente'}</span>
+                            <span className="text-sm font-medium leading-none truncate max-w-[150px]">{client?.full_name || 'Cliente'}</span>
                             <span className="text-[10px] text-slate-400 font-normal flex items-center gap-1 mt-0.5">
                                 <Phone size={10}/> {rawPhone || 'N/A'}
                             </span>
@@ -141,11 +141,11 @@ function ClientContactPopover({ client }: { client: any }) {
                     </div>
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-64 p-2" align="start">
+            <PopoverContent className="w-64 p-2 z-[9999]" align="start">
                 {rawPhone ? (
                     <div className="grid gap-1">
                         <a href={`tel:${rawPhone}`} className="flex items-center gap-3 p-2 rounded hover:bg-slate-50 text-sm"><PhoneCall size={14}/> Llamar</a>
-                        <a href={`https://wa.me/${cleanPhone}`} target="_blank" className="flex items-center gap-3 p-2 rounded hover:bg-slate-50 text-sm"><MessageCircle size={14}/> WhatsApp</a>
+                        <a href={`https://wa.me/${cleanPhone}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 rounded hover:bg-slate-50 text-sm"><MessageCircle size={14}/> WhatsApp</a>
                         <button onClick={handleCopy} className="flex items-center gap-3 p-2 rounded hover:bg-slate-50 text-sm w-full text-left"><Copy size={14}/> Copiar</button>
                     </div>
                 ) : <div className="text-xs text-center text-slate-400 p-2">Sin teléfono</div>}
@@ -176,7 +176,7 @@ function SearchableServiceSelect({ services, value, onChange, disabled, petSize 
                     {!disabled && <ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" />}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[300px] p-0" align="start">
+            <PopoverContent className="w-[300px] p-0 z-[9999]" align="start">
                 <Command>
                     <CommandInput placeholder="Buscar servicio..." />
                     <CommandList>
@@ -213,7 +213,7 @@ function SearchableEmployeeSelect({ employees, value, onChange, disabled }: any)
                     {!disabled && <ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" />}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[200px] p-0" align="start">
+            <PopoverContent className="w-[200px] p-0 z-[9999]" align="start">
                 <Command>
                     <CommandInput placeholder="Buscar..." />
                     <CommandList>
@@ -286,9 +286,7 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                 
                 if(hist) {
                     const formattedHist = hist.map((h:any) => {
-                        // Intentar sacar de tabla nueva
                         let names = h.appointment_services?.map((item: any) => item.services?.name).filter(Boolean) || [];
-                        // Fallback a legacy (Notas)
                         if (names.length === 0 && h.notes && h.notes.startsWith('ServicioCD:')) {
                             const match = h.notes.match(/ServicioCD:\s*(.*?)(?:\.\s*Perfume|$)/i);
                             if (match && match[1]) names = [match[1].trim()];
@@ -351,11 +349,9 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
         if (isReadOnly) return;
         setLoading(true);
         try {
-            // 1. Guardar Datos Generales
             const pId = fullData.id;
             await supabase.from('appointments').update({ date, notes }).eq('id', pId);
 
-            // 2. Guardar Servicio Principal
             if (mainService.serviceId) {
                 const mainStartISO = formatForDB(date, mainService.startTime);
                 const mainEndISO = formatForDB(date, mainService.endTime);
@@ -372,20 +368,17 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                 if (mainService.id) {
                     await supabase.from('appointment_services').update(mainPayload).eq('id', mainService.id);
                 } else {
-                    // Si no existía (cita vieja), crearlo
                     const { data: newMain } = await supabase.from('appointment_services').insert(mainPayload).select('id').single();
                     if(newMain) setMainService((prev: any) => ({...prev, id: newMain.id}));
                 }
             }
 
-            // 3. Gestionar Extras (Borrar removidos)
             const currentExtraIds = extraServices.map(e => e.id).filter(Boolean);
             const toDeleteIds = initialExtraIds.filter(id => !currentExtraIds.includes(id));
             if (toDeleteIds.length > 0) {
                 await supabase.from('appointment_services').delete().in('id', toDeleteIds);
             }
 
-            // 4. Gestionar Extras (Upsert)
             for(const extra of extraServices) {
                 const extraStartISO = formatForDB(date, extra.startTime);
                 const extraEndISO = formatForDB(date, extra.endTime);
@@ -452,42 +445,47 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
 
     return (
         <div className="flex flex-col h-full w-full bg-slate-50/50 overflow-hidden">
-            {/* FIX: Se agregó pr-12 para evitar que la X tape el contenido */}
-            <DialogHeader className="pl-6 pr-12 py-5 border-b border-slate-100 bg-white shrink-0 flex flex-row items-start justify-between space-y-0 text-left">
-                <div className="flex flex-col gap-1 w-full">
-                    <DialogTitle className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-                        {pet?.name}
-                        <div className="flex gap-1.5">
-                            <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-100 font-medium">
-                                {pet?.breed}
-                            </Badge>
-                            {pet?.size && <Badge variant="outline" className="text-slate-500 border-slate-300 font-normal uppercase text-[10px] tracking-wide flex items-center gap-1"><Ruler size={10}/> {pet.size}</Badge>}
-                        </div>
-                    </DialogTitle>
-                    <DialogDescription className="flex items-center gap-4 text-sm text-slate-500 mt-1">
-                        <ClientContactPopover client={client} />
-                    </DialogDescription>
-                </div>
+            {/* HEADER MEJORADO PARA MÓVIL */}
+            <DialogHeader className="px-4 py-4 md:px-6 md:py-5 border-b border-slate-100 bg-white shrink-0">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mr-8 md:mr-0">
+                    <div className="space-y-1">
+                        <DialogTitle className="text-xl md:text-2xl font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                            {pet?.name}
+                            <div className="flex items-center gap-1.5 mt-1 md:mt-0">
+                                <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200 font-medium">
+                                    {pet?.breed}
+                                </Badge>
+                                {pet?.size && (
+                                    <Badge variant="outline" className="text-slate-500 border-slate-300 font-normal uppercase text-[10px] tracking-wide flex items-center gap-1">
+                                        <Ruler size={10}/> {pet.size}
+                                    </Badge>
+                                )}
+                            </div>
+                        </DialogTitle>
+                        <DialogDescription className="flex items-center gap-4 text-sm text-slate-500">
+                            <ClientContactPopover client={client} />
+                        </DialogDescription>
+                    </div>
 
-                <div className="flex flex-col items-end gap-1">
-                    <Label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Estatus</Label>
-                    <Select value={status} onValueChange={handleStatusChange} disabled={loading}>
-                        <SelectTrigger className={cn("w-[160px] h-8 text-xs font-bold border-slate-200 shadow-sm", statusInfo.bg, statusInfo.color)}>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent align="end">
-                            {STATUS_OPTIONS.map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                    <div className="flex items-center gap-2"><opt.icon size={12} className={opt.color}/> {opt.label}</div>
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <div className="w-full md:w-auto mt-2 md:mt-0">
+                        <Select value={status} onValueChange={handleStatusChange} disabled={loading}>
+                            <SelectTrigger className={cn("w-full md:w-[180px] h-9 text-xs font-bold border-slate-200 shadow-sm", statusInfo.bg, statusInfo.color)}>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent align="end">
+                                {STATUS_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                        <div className="flex items-center gap-2"><opt.icon size={12} className={opt.color}/> {opt.label}</div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
             </DialogHeader>
 
             <Tabs defaultValue="details" className="flex flex-col h-full w-full overflow-hidden">
-                <div className="px-6 pt-2 pb-0 shrink-0 bg-slate-50/50">
+                <div className="px-4 md:px-6 pt-2 pb-0 shrink-0 bg-slate-50/50">
                     <TabsList className="w-full grid grid-cols-2 mb-2 bg-slate-100 p-1">
                         <TabsTrigger value="details">Detalles</TabsTrigger>
                         <TabsTrigger value="history">Historial</TabsTrigger>
@@ -495,8 +493,8 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                 </div>
                 
                 <div className="flex-1 min-h-0 overflow-y-auto">
-                    <div className="p-6 pt-2 pb-6">
-                        {/* TAB: DETALLES (GENERAL + SERVICIOS) */}
+                    <div className="p-4 md:p-6 pt-2 pb-20">
+                        {/* TAB: DETALLES */}
                         <TabsContent value="details" className="space-y-6 mt-0 focus-visible:outline-none">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
@@ -530,12 +528,12 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                                             <Label className="text-[10px] uppercase font-bold text-slate-400">Encargado</Label>
                                             <SearchableEmployeeSelect employees={employees} value={mainService.employeeId} onChange={(v:any) => setMainService((prev: any) => ({...prev, employeeId:v}))} disabled={isReadOnly} />
                                         </div>
-                                        <div className="space-y-1.5">
+                                        <div className="space-y-1.5 col-span-1 md:col-span-2">
                                             <Label className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1"><Clock size={10}/> Horario</Label>
                                             <div className="flex items-center gap-2">
-                                                <Input type="time" value={mainService.startTime || ""} onChange={e => setMainService((prev: any) => ({...prev, startTime: e.target.value, endTime: calculateEndTime(e.target.value, prev.duration)}))} disabled={isReadOnly} className="h-9"/>
+                                                <Input type="time" value={mainService.startTime || ""} onChange={e => setMainService((prev: any) => ({...prev, startTime: e.target.value, endTime: calculateEndTime(e.target.value, prev.duration)}))} disabled={isReadOnly} className="h-9 w-full md:w-32"/>
                                                 <span className="text-slate-300">-</span>
-                                                <Input type="time" value={mainService.endTime || ""} disabled className="h-9 bg-slate-50 text-slate-500"/>
+                                                <Input type="time" value={mainService.endTime || ""} disabled className="h-9 bg-slate-50 text-slate-500 w-full md:w-32"/>
                                             </div>
                                         </div>
                                     </div>
@@ -562,9 +560,9 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                                                     disabled={isReadOnly} 
                                                 />
                                                 <SearchableEmployeeSelect employees={employees} value={extra.employeeId} onChange={(v:string) => setExtraServices((prev: any[]) => prev.map(e => e.tempId === extra.tempId ? {...e, employeeId: v} : e))} disabled={isReadOnly} />
-                                                <div className="flex gap-2 col-span-2 md:col-span-1">
-                                                    <Input type="time" value={extra.startTime || ""} onChange={e => setExtraServices((prev: any[]) => prev.map(ex => ex.tempId === extra.tempId ? {...ex, startTime: e.target.value, endTime: calculateEndTime(e.target.value, ex.duration)} : ex))} disabled={isReadOnly} className="h-8 text-xs"/>
-                                                    <Input type="time" value={extra.endTime || ""} disabled className="h-8 text-xs bg-slate-50"/>
+                                                <div className="flex gap-2 col-span-1 md:col-span-2">
+                                                    <Input type="time" value={extra.startTime || ""} onChange={e => setExtraServices((prev: any[]) => prev.map(ex => ex.tempId === extra.tempId ? {...ex, startTime: e.target.value, endTime: calculateEndTime(e.target.value, ex.duration)} : ex))} disabled={isReadOnly} className="h-8 text-xs w-full md:w-24"/>
+                                                    <Input type="time" value={extra.endTime || ""} disabled className="h-8 text-xs bg-slate-50 w-full md:w-24"/>
                                                 </div>
                                             </div>
                                         </div>
@@ -573,7 +571,7 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                             )}
                             
                             {!isReadOnly && (
-                                <Button variant="outline" size="sm" className="w-full border-dashed text-slate-500 hover:text-purple-600 hover:border-purple-200 hover:bg-purple-50" onClick={() => {
+                                <Button variant="outline" size="sm" className="w-full border-dashed text-slate-500 hover:text-purple-600 hover:border-purple-200 hover:bg-purple-50 h-10" onClick={() => {
                                     const lastTime = extraServices.length > 0 ? extraServices[extraServices.length-1].endTime : mainService.endTime;
                                     setExtraServices([...extraServices, { tempId: Math.random(), serviceId: "", employeeId: mainService.employeeId, startTime: lastTime, endTime: calculateEndTime(lastTime, 30), duration: 30 }]);
                                 }}>
@@ -620,16 +618,16 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
                 </div>
                 
                 {/* FOOTER */}
-                <div className="p-4 bg-white border-t border-slate-200 shrink-0 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
+                <div className="p-4 bg-white border-t border-slate-200 shrink-0 flex flex-col md:flex-row justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20 gap-3">
                     {!isReadOnly && (
-                        <Button variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={handleDelete}>
+                        <Button variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50 w-full md:w-auto" onClick={handleDelete}>
                             <Trash2 size={16} className="mr-2"/> Eliminar
                         </Button>
                     )}
-                    <div className="flex gap-2 ml-auto">
-                        <Button variant="outline" onClick={onClose}>Cerrar</Button>
+                    <div className="flex gap-2 w-full md:w-auto ml-auto">
+                        <Button variant="outline" onClick={onClose} className="flex-1 md:flex-none">Cerrar</Button>
                         {!isReadOnly && (
-                            <Button onClick={handleSave} disabled={loading} className="bg-slate-900 hover:bg-slate-800 text-white min-w-[120px]">
+                            <Button onClick={handleSave} disabled={loading} className="bg-slate-900 hover:bg-slate-800 text-white min-w-[120px] flex-1 md:flex-none">
                                 {loading ? <Loader2 className="animate-spin"/> : <Save size={16} className="mr-2"/>} 
                                 Guardar
                             </Button>
@@ -662,7 +660,7 @@ export default function AppointmentDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[650px] h-[85vh] flex flex-col p-0 overflow-hidden bg-white gap-0">
+      <DialogContent className="w-[95vw] md:w-[650px] h-[90vh] md:h-[85vh] flex flex-col p-0 overflow-hidden bg-white gap-0 rounded-lg">
         <AppointmentForm 
             key={appointment.id} 
             appointment={appointment} 
