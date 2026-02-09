@@ -374,18 +374,12 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                   setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: viewState === 'day' ? final.colId : a.employee_id } : a));
                   updateAppointment(final.apptId, final.startTime, final.endTime, viewState === 'day' ? final.colId : undefined);
               } else if (isDragging && !isDragStarted) {
-                  // FIX CRÍTICO: Fue un tap simple (click) en móvil.
-                  // 1. Encontramos la cita
+                  // Fue un tap simple (click) en móvil
                   const appt = localAppts.find(a => a.id === isDragging);
-                  
-                  // 2. IMPORTANTE: Prevenimos el click nativo fantasma si estamos en touch
                   if(e && e.cancelable) e.preventDefault(); 
-
-                  // 3. Abrimos el diálogo directamente (evitando el bloqueo por isDragging)
                   if (appt) openDetailDialog(appt);
               }
               
-              // Limpieza
               setIsDragging(null);
               setTouchDragStart(null);
               setIsDragStarted(false);
@@ -428,7 +422,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const handleResizeStart = (e: React.MouseEvent | React.TouchEvent, appt: any) => {
       if (!canEdit) return;
       e.stopPropagation();
-      // Prevenir comportamiento nativo en touch
       if (e.cancelable && 'touches' in e) e.preventDefault();
       
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
@@ -504,7 +497,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       
       const target = e.target as HTMLElement;
       if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
-          return; // Ya no prevenimos default aquí para touch, lo manejamos arriba
+          return; 
       }
 
       setTooltipData(null);
@@ -512,7 +505,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       dragDistanceRef.current = 0;
       
       if ('dataTransfer' in e) { 
-          // Desktop Drag (HTML5)
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData("apptId", appt.id);
           try {
@@ -524,11 +516,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           } catch(err) {}
           setTimeout(() => setIsDragging(appt.id), 0);
       } else if ('touches' in e) { 
-          // Mobile Touch Drag
           const touch = e.touches[0];
           setTouchDragStart({ x: touch.clientX, y: touch.clientY, time: Date.now() });
           setIsDragging(appt.id);
-          // IMPORTANTE: No hacemos preventDefault aquí para permitir diferenciar tap de scroll inicial
       }
   };
 
@@ -814,7 +804,8 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     key={viewState} 
                     className="flex flex-col min-w-[1000px] h-full relative"
                 >
-                    <div className="flex sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm w-full">
+                    {/* Header Sticky (z-45) > Time Column (z-40) > Appointments (z-35) */}
+                    <div className="flex sticky top-0 z-45 bg-white border-b border-slate-200 shadow-sm w-full">
                         <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[100px] flex items-center justify-center">
                             <Clock size={16} className="text-slate-300" />
                         </div>
@@ -866,7 +857,8 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     </div>
 
                     <div className="flex flex-1 relative bg-white h-fit min-h-full" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
-                        <div className="sticky left-0 z-30 w-14 bg-white border-r border-slate-200 h-fit min-h-full shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        {/* Z-40 para que tape las citas (z-35) al hacer scroll lateral */}
+                        <div className="sticky left-0 z-40 w-14 bg-white border-r border-slate-200 h-fit min-h-full shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             {timeSlots.map((slot, i) => (<div key={i} style={{ height: `${30 * PIXELS_PER_MINUTE}px` }} className="flex justify-center pt-1.5 border-b border-slate-50 bg-white"><span className="text-[10px] font-semibold text-slate-400">{format(slot, 'HH:mm')}</span></div>))}
                         </div>
 
@@ -917,8 +909,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                         onMouseLeave={handleMouseLeave}
                                         onTouchStart={(e) => { if (!absenceOverlay && !resizing && canEdit) { const target = e.target as HTMLElement; if (!target.closest('.resize-handle')) handleDragStart(e, appt); } }}
                                         
-                                        // IMPORTANTE: Z-Index 35 para flotar sobre "Ausente" (z-30)
-                                        // IMPORTANTE: touchAction: 'none' para que no haga scroll en el móvil
+                                        // IMPORTANTE: Z-Index 35 para flotar sobre "Ausente" (z-30), pero debajo de la hora (z-40)
                                         className={cn(
                                             "absolute rounded-lg shadow-sm border overflow-hidden transition-all duration-200 ring-1 ring-white flex flex-col p-1.5 group/appt", 
                                             styles.container, 
@@ -933,9 +924,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                             height: `${appt.height}px`, 
                                             left: `${appt.leftPct}%`, 
                                             width: `${appt.widthPct}%`, 
-                                            zIndex: 35, // FIX: Siempre visible encima de ausencia
+                                            zIndex: 35, 
                                             borderColor: isFamily ? stringToColor(appt.appointment?.client?.full_name||'') : undefined,
-                                            touchAction: 'none', // FIX IPHONE: Permite arrastrar sin scrollear
+                                            touchAction: 'none', 
                                             WebkitUserSelect: 'none',
                                             userSelect: 'none'
                                         }}>
