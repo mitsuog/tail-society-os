@@ -680,8 +680,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
   return (
     <>
-      <div className="flex flex-col h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
-        <div className="flex flex-col lg:flex-row items-center justify-between px-4 py-3 bg-white border-b border-slate-200 gap-4">
+      {/* 1. AJUSTE DE ALTURA PARA MÓVIL (dvh) 
+         Esto asegura que la barra del navegador (Safari/Chrome) no tape el final
+      */}
+      <div className="flex flex-col h-[calc(100dvh-8rem)] md:h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
+        <div className="flex flex-col lg:flex-row items-center justify-between px-4 py-3 bg-white border-b border-slate-200 gap-4 shrink-0">
             <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={() => handleDateStep('prev')}><ChevronLeft size={16} /></Button>
                 <div className="relative group">
@@ -719,9 +722,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
             </div>
         </div>
 
-        <div className="flex-1 overflow-auto relative w-full h-full bg-slate-50/30" onClick={() => setContextMenu(null)}>
+        {/* CONTENEDOR PRINCIPAL */}
+        <div className="flex-1 overflow-auto relative w-full h-full bg-slate-50/30 touch-pan-x touch-pan-y" onClick={() => setContextMenu(null)}>
             {view === 'month' ? (
-                <div className="flex flex-col h-full bg-white p-4">
+                // VISTA MENSUAL (Sin cambios mayores, solo h-full asegurado)
+                <div className="flex flex-col min-h-full bg-white p-4">
                     <div className="grid grid-cols-7 mb-2 border-b border-slate-200 pb-2">
                         {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
                             <div key={d} className="text-center text-xs font-bold text-slate-500 uppercase tracking-wide">{d}</div>
@@ -749,7 +754,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                             </div>
                                         )}
                                     </div>
-                                    {/* BARRA DE PROGRESO MENSUAL - SE MUESTRA SIEMPRE (AUNQUE SEA 0%) */}
                                     {!holiday && (
                                         <div className="mt-2 w-full">
                                             <div className="flex justify-between items-end mb-0.5">
@@ -767,8 +771,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     </div>
                 </div>
             ) : (
-                <div className="flex h-full overflow-hidden flex-col">
-                    <div className="flex sticky top-0 z-40 bg-white min-w-max border-b border-slate-200 shadow-sm w-full">
+                // --- VISTAS DÍA / SEMANA (CORRECCIÓN MÓVIL AQUI) ---
+                <div className="flex flex-col min-w-[1000px] h-full relative">
+                    
+                    {/* CABECERA STICKY (Nombres de Empleados) */}
+                    <div className="flex sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm w-full">
                         <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[100px]"></div>
                         <div className="flex flex-1">
                             {columns.map((col) => {
@@ -812,12 +819,15 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                         </div>
                     </div>
 
-                    <div className="flex min-w-max relative flex-1 overflow-auto" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
-                        <div className="sticky left-0 z-30 w-14 bg-white border-r border-slate-200 h-fit min-h-full">
+                    {/* CUERPO DEL CALENDARIO (Grid) */}
+                    <div className="flex flex-1 relative bg-white h-fit min-h-full" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+                        {/* COLUMNA DE HORAS (Sticky Izquierda) */}
+                        <div className="sticky left-0 z-30 w-14 bg-white border-r border-slate-200 h-fit min-h-full shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             {timeSlots.map((slot, i) => (<div key={i} style={{ height: `${30 * PIXELS_PER_MINUTE}px` }} className="flex justify-center pt-1.5 border-b border-slate-50 bg-white"><span className="text-[10px] font-semibold text-slate-400">{format(slot, 'HH:mm')}</span></div>))}
                         </div>
 
-                        <div className="flex flex-1 relative bg-white h-fit min-h-full">
+                        {/* COLUMNAS DE DATOS */}
+                        <div className="flex flex-1 relative h-fit min-h-full">
                             {dragGhost && (<div className="absolute z-50 rounded-lg border-2 border-dashed border-blue-400 bg-blue-100/80 p-2 flex flex-col justify-center items-center text-blue-700 pointer-events-none" style={{ top: `${dragGhost.top}px`, height: `${dragGhost.height}px`, left: `${(dragGhost.colIndex * (100 / columns.length))}%`, width: `${100 / columns.length}%`, marginLeft: '2px', maxWidth: 'calc(' + (100 / columns.length) + '% - 4px)' }}><div className="font-bold text-xs flex items-center gap-1"><Clock size={12} />{format(dragGhost.startTime, 'HH:mm')}</div></div>)}
 
                             {columns.map((col, colIndex) => {
