@@ -29,13 +29,15 @@ interface SidebarProps {
   isMobileOpen: boolean;
   toggleDesktopCollapse: () => void;
   closeMobileMenu: () => void;
+  userRole?: string; // <--- NUEVO PROP
 }
 
 export default function Sidebar({ 
   isDesktopCollapsed, 
   isMobileOpen, 
   toggleDesktopCollapse,
-  closeMobileMenu
+  closeMobileMenu,
+  userRole = 'employee' // Por seguridad, default al más bajo
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -44,18 +46,56 @@ export default function Sidebar({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const supabase = createClient();
 
+  // --- LÓGICA DE PERMISOS ---
+  
+  // 1. Definir quién puede ver qué menú
+  const allMenuItems = [
+    { 
+      name: 'Dashboard', 
+      icon: Home, 
+      href: '/', 
+      allowedRoles: ['admin', 'receptionist', 'employee'] 
+    },
+    { 
+      name: 'Calendario', 
+      icon: CalendarDays, 
+      href: '/appointments', 
+      allowedRoles: ['admin', 'receptionist', 'employee'] 
+    },
+    { 
+      name: 'Servicios', 
+      icon: Scissors, 
+      href: '/admin/services', 
+      allowedRoles: ['admin'] // Solo Admin configura servicios
+    },
+    { 
+      name: 'Equipo', 
+      icon: Users, 
+      href: '/admin/staff', 
+      allowedRoles: ['admin'] // Solo Admin ve RRHH
+    },
+    { 
+      name: 'Admin', 
+      icon: ShieldCheck, 
+      href: '/admin/users', 
+      allowedRoles: ['admin'] // Solo Admin gestiona usuarios
+    },
+  ];
+
+  // 2. Filtrar el menú basado en el rol actual
+  const visibleMenuItems = allMenuItems.filter(item => item.allowedRoles.includes(userRole));
+
+  // 3. Definir si puede crear cosas (Staff no puede, Admin/Recep sí)
+  const canCreate = ['admin', 'receptionist'].includes(userRole);
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
-        toast.error('Error al cerrar sesión', {
-          description: error.message,
-        });
+        toast.error('Error al cerrar sesión', { description: error.message });
       } else {
-        toast.success('Sesión cerrada', {
-          description: 'Hasta pronto!',
-        });
+        toast.success('Sesión cerrada');
         router.push('/login');
         router.refresh();
       }
@@ -67,14 +107,6 @@ export default function Sidebar({
   };
 
   if (pathname?.startsWith('/checkin')) return null;
-
-  const menuItems = [
-    { name: 'Dashboard', icon: Home, href: '/' },
-    { name: 'Calendario', icon: CalendarDays, href: '/appointments' },
-    { name: 'Servicios', icon: Scissors, href: '/admin/services' },
-    { name: 'Equipo', icon: Users, href: '/admin/staff' },
-    { name: 'Admin', icon: ShieldCheck, href: '/admin/users' },
-  ];
 
   return (
     <>
@@ -120,10 +152,6 @@ export default function Sidebar({
                     className="object-contain rounded-full"
                     sizes="40px"
                  />
-                 {/* Tooltip on hover */}
-                 <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-800 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                   Tail Society
-                 </div>
                </div>
             </div>
           )}
@@ -143,32 +171,37 @@ export default function Sidebar({
         {/* NAVIGATION */}
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 custom-scrollbar">
           
-          {/* BOTÓN NUEVA CITA */}
-          <button 
-            onClick={() => setAppointmentModalOpen(true)}
-            className={cn(
-              "flex items-center gap-3 w-full bg-slate-100 hover:bg-white text-slate-900 transition-all shadow-lg shadow-white/5 mb-3 group relative overflow-hidden ring-1 ring-slate-200",
-              isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
-            )}
-          >
-            <CalendarPlus size={isDesktopCollapsed ? 24 : 20} className={cn("shrink-0 transition-transform text-purple-600", !isDesktopCollapsed && "group-hover:scale-110")} />
-            {!isDesktopCollapsed && <span className="font-bold text-sm">Nueva Cita</span>}
-          </button>
+          {/* BOTONES DE ACCIÓN (Solo Admin y Recepción) */}
+          {canCreate && (
+            <>
+              {/* BOTÓN NUEVA CITA */}
+              <button 
+                onClick={() => setAppointmentModalOpen(true)}
+                className={cn(
+                  "flex items-center gap-3 w-full bg-slate-100 hover:bg-white text-slate-900 transition-all shadow-lg shadow-white/5 mb-3 group relative overflow-hidden ring-1 ring-slate-200",
+                  isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
+                )}
+              >
+                <CalendarPlus size={isDesktopCollapsed ? 24 : 20} className={cn("shrink-0 transition-transform text-purple-600", !isDesktopCollapsed && "group-hover:scale-110")} />
+                {!isDesktopCollapsed && <span className="font-bold text-sm">Nueva Cita</span>}
+              </button>
 
-          {/* BOTÓN NUEVO CLIENTE */}
-          <button 
-            onClick={() => setClientModalOpen(true)}
-            className={cn(
-              "flex items-center gap-3 w-full bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-900/20 mb-6 group relative overflow-hidden",
-              isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
-            )}
-          >
-            <PlusCircle size={isDesktopCollapsed ? 24 : 20} className={cn("shrink-0 transition-transform", !isDesktopCollapsed && "group-hover:rotate-90")} />
-            {!isDesktopCollapsed && <span className="font-bold text-sm">Nuevo Cliente</span>}
-          </button>
+              {/* BOTÓN NUEVO CLIENTE */}
+              <button 
+                onClick={() => setClientModalOpen(true)}
+                className={cn(
+                  "flex items-center gap-3 w-full bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-900/20 mb-6 group relative overflow-hidden",
+                  isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
+                )}
+              >
+                <PlusCircle size={isDesktopCollapsed ? 24 : 20} className={cn("shrink-0 transition-transform", !isDesktopCollapsed && "group-hover:rotate-90")} />
+                {!isDesktopCollapsed && <span className="font-bold text-sm">Nuevo Cliente</span>}
+              </button>
+            </>
+          )}
 
           <div className="space-y-1">
-            {menuItems.map((item) => {
+            {visibleMenuItems.map((item) => {
               const isActive = item.href === '/' 
                 ? pathname === '/' 
                 : pathname?.startsWith(item.href);
@@ -232,7 +265,6 @@ export default function Sidebar({
           onOpenChange={setClientModalOpen} 
         />
         
-        {/* 🔥 AQUÍ ESTABA EL FALTANTE: Componente del modal de cita */}
         <NewAppointmentDialog 
           open={isAppointmentModalOpen} 
           onOpenChange={setAppointmentModalOpen}
@@ -251,7 +283,6 @@ export default function Sidebar({
             <LogOut size={20} className={cn("shrink-0", isLoggingOut && "animate-spin")} />
             {!isDesktopCollapsed && <span>{isLoggingOut ? 'Cerrando...' : 'Cerrar Sesión'}</span>}
             
-            {/* Tooltip for collapsed state */}
             {isDesktopCollapsed && !isLoggingOut && (
               <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 bg-slate-800 text-white px-2 py-1 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                 Cerrar Sesión
