@@ -161,25 +161,34 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
+  // --- 1. ESTADO LOCAL (Optimistic UI) ---
+  // Esto permite que la fecha cambie inmediatamente sin esperar al router
+  const [dateState, setDateState] = useState(currentDate);
+  const [viewState, setViewState] = useState(view);
+
+  // Sincronizar estado local si las props cambian externamente (ej: navegación atrás/adelante navegador)
+  useEffect(() => { setDateState(currentDate); }, [currentDate]);
+  useEffect(() => { setViewState(view); }, [view]);
+
   const START_HOUR = 9;
   const END_HOUR = 20;
   const PIXELS_PER_MINUTE = 1.8; 
   const SNAP_MINUTES = 15; 
 
+  // Usamos dateState y viewState en lugar de las props directas
   const columns = useMemo<ColumnData[]>(() => {
-    if (view === 'day') {
+    if (viewState === 'day') {
       return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
     } else {
-      let daysToShow = view === '3day' ? 3 : 7;
+      let daysToShow = viewState === '3day' ? 3 : 7;
       return Array.from({ length: daysToShow }).map((_, i) => {
-        const date = addDays(currentDate, i);
+        const date = addDays(dateState, i);
         return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
       });
     }
-  }, [view, currentDate, employees]);
+  }, [viewState, dateState, employees]);
 
-  // Estados
   const [localAppts, setLocalAppts] = useState<any[]>(appointments);
   const [schedules, setSchedules] = useState<any[]>([]); 
   const [absences, setAbsences] = useState<any[]>([]); 
@@ -210,16 +219,23 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
   const handleRefresh = useCallback(() => { setRefreshKey(prev => prev + 1); }, []);
 
+  // --- 2. MANEJO DE NAVEGACIÓN MEJORADO ---
   const handleNavigate = (type: 'date' | 'view', value: any) => {
+    // Actualizamos LOCALMENTE primero (inmediato)
+    if (type === 'date') setDateState(value);
+    if (type === 'view') setViewState(value);
+
+    // Luego actualizamos la URL (persistencia)
     const params = new URLSearchParams(searchParams.toString());
     if (type === 'date') params.set('date', format(value, 'yyyy-MM-dd'));
     else if (type === 'view') params.set('view', value);
+    
     router.push(`?${params.toString()}`, { scroll: false });
   };
 
   const handleDateStep = (direction: 'prev' | 'next') => {
-      const step = view === 'week' ? 7 : view === '3day' ? 3 : 1;
-      const newDate = direction === 'next' ? addDays(currentDate, step) : subDays(currentDate, step);
+      const step = viewState === 'week' ? 7 : viewState === '3day' ? 3 : 1;
+      const newDate = direction === 'next' ? addDays(dateState, step) : subDays(dateState, step);
       handleNavigate('date', newDate);
   };
 
@@ -228,14 +244,14 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   useEffect(() => {
     const fetchData = async () => {
       let startRange, endRange;
-      if (view === 'month') {
-          const monthStart = startOfMonth(currentDate);
+      if (viewState === 'month') {
+          const monthStart = startOfMonth(dateState);
           const monthEnd = endOfMonth(monthStart);
           startRange = startOfWeek(monthStart, { weekStartsOn: 1 }); 
           endRange = endOfWeek(monthEnd, { weekStartsOn: 1 });
       } else {
-          startRange = startOfDay(currentDate);
-          endRange = endOfDay(view === '3day' ? addDays(currentDate, 2) : view === 'week' ? addDays(currentDate, 6) : currentDate);
+          startRange = startOfDay(dateState);
+          endRange = endOfDay(viewState === '3day' ? addDays(dateState, 2) : viewState === 'week' ? addDays(dateState, 6) : dateState);
       }
       const { data: apptData } = await supabase.from('appointment_services')
         .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
@@ -252,7 +268,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       if (holData) setHolidays(holData);
     };
     fetchData();
-  }, [currentDate, view, refreshKey, supabase]);
+  }, [dateState, viewState, refreshKey, supabase]); // Dependencias actualizadas a estado local
 
   // --- RESIZE LOGIC ---
   useEffect(() => {
@@ -351,7 +367,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     if (!canEdit) { toast.error("No tienes permisos para modificar citas."); return; }
     try {
       let updatePayload: any = { start_time: newStart.toISOString(), end_time: newEnd.toISOString() };
-      if (view === 'day' && newColId) updatePayload.employee_id = newColId;
+      if (viewState === 'day' && newColId) updatePayload.employee_id = newColId;
       await supabase.from('appointment_services').update(updatePayload).eq('id', id);
       toast.success("Actualizado"); handleRefresh();
     } catch (e: any) { toast.error(e.message); setLocalAppts([...appointments]); }
@@ -362,7 +378,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const rect = e.currentTarget.getBoundingClientRect();
       const clickY = e.clientY - rect.top;
       const snappedMinutes = Math.round(Math.max(0, clickY / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
-      const baseDate = col.type === 'date' ? col.data : currentDate;
+      const baseDate = col.type === 'date' ? col.data : dateState;
       const startTime = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
 
       setContextMenu({
@@ -416,7 +432,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
     const rect = e.currentTarget.getBoundingClientRect();
     const snappedMinutes = Math.round(Math.max(0, (e.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
-    const baseDate = col.type === 'date' ? col.data : currentDate;
+    const baseDate = col.type === 'date' ? col.data : dateState;
     const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
     const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
     
@@ -431,8 +447,8 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       e.preventDefault(); e.stopPropagation(); 
       const final = ghostRef.current; 
       if (final) { 
-          setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a)); 
-          updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined); 
+          setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: viewState === 'day' ? final.colId : a.employee_id } : a)); 
+          updateAppointment(final.apptId, final.startTime, final.endTime, viewState === 'day' ? final.colId : undefined); 
       } 
       ghostRef.current = null; setIsDragging(null); setDragGhost(null); 
   };
@@ -454,7 +470,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
         if (column) {
             const rect = columnElement.getBoundingClientRect();
             const snappedMinutes = Math.round(Math.max(0, (touch.clientY - rect.top) / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
-            const baseDate = column.type === 'date' ? column.data : currentDate;
+            const baseDate = column.type === 'date' ? column.data : dateState;
             const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
             const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
             const newGhost = { apptId: appt.id, colId: column.id, colIndex: columns.findIndex(c => c.id === column.id), startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
@@ -462,7 +478,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
             ghostRef.current = newGhost;
         }
     }
-  }, [isDragging, touchDragStart, isDragStarted, columns, currentDate, PIXELS_PER_MINUTE, SNAP_MINUTES, START_HOUR]);
+  }, [isDragging, touchDragStart, isDragStarted, columns, dateState, PIXELS_PER_MINUTE, SNAP_MINUTES, START_HOUR]);
 
   const handleTouchEnd = useCallback((e: TouchEvent, appt: any) => {
     if (!isDragging) return;
@@ -475,11 +491,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     }
     const final = ghostRef.current;
     if (final) {
-        setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: view === 'day' ? final.colId : a.employee_id } : a));
-        updateAppointment(final.apptId, final.startTime, final.endTime, view === 'day' ? final.colId : undefined);
+        setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: viewState === 'day' ? final.colId : a.employee_id } : a));
+        updateAppointment(final.apptId, final.startTime, final.endTime, viewState === 'day' ? final.colId : undefined);
     }
     setIsDragging(null); setTouchDragStart(null); setIsDragStarted(false); setDragGhost(null); ghostRef.current = null;
-  }, [isDragging, view, updateAppointment]);
+  }, [isDragging, viewState, updateAppointment]);
 
   const handleReactTouchMove = useCallback((e: React.TouchEvent, appt: any, col: ColumnData, colIndex: number) => { handleTouchMove(e.nativeEvent, appt, col, colIndex); }, [handleTouchMove]);
   const handleReactTouchEnd = useCallback((e: React.TouchEvent, appt: any) => { handleTouchEnd(e.nativeEvent, appt); }, [handleTouchEnd]);
@@ -487,7 +503,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const getAppointmentsForColumn = useCallback((col: ColumnData) => {
     const colAppts = localAppts.filter(appt => {
       const apptStart = parseISO(appt.start_time);
-      if (view === 'day') return appt.employee_id === col.id && isSameDay(apptStart, currentDate);
+      if (viewState === 'day') return appt.employee_id === col.id && isSameDay(apptStart, dateState);
       else return format(apptStart, 'yyyy-MM-dd') === col.id;
     });
     const items = colAppts.map(appt => {
@@ -508,33 +524,33 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
         if(!placed) { lanes.push([item]); item.laneIndex = lanes.length-1; }
     });
     return items.map(item => ({ ...item, widthPct: 100/lanes.length, leftPct: (100/lanes.length) * item.laneIndex }));
-  }, [localAppts, view, currentDate, resizing, PIXELS_PER_MINUTE]);
+  }, [localAppts, viewState, dateState, resizing, PIXELS_PER_MINUTE]);
 
   const timeSlots = useMemo(() => {
     const slots = [];
-    let time = setHours(startOfDay(currentDate), START_HOUR);
-    const endTime = setHours(startOfDay(currentDate), END_HOUR);
+    let time = setHours(startOfDay(dateState), START_HOUR);
+    const endTime = setHours(startOfDay(dateState), END_HOUR);
     while (time <= endTime) { slots.push(time); time = addMinutes(time, 30); }
     return slots;
-  }, [currentDate, START_HOUR, END_HOUR]);
+  }, [dateState, START_HOUR, END_HOUR]);
 
   // --- CALCULO UNIFICADO DE DATOS (Día, 3Días, Semana) ---
   const calculateColumnData = useCallback((col: ColumnData) => {
       let colAppointments = [];
       let capacityMinutes = 0;
-      const checkDate = col.type === 'date' ? col.data : currentDate;
+      const checkDate = col.type === 'date' ? col.data : dateState;
       const holiday = holidays.find(h => h.date === format(checkDate, 'yyyy-MM-dd'));
       const isHoliday = !!holiday;
 
       if (col.type === 'employee') {
           // Lógica de Vista DÍA (Por Empleado)
-          colAppointments = localAppts.filter(a => a.employee_id === col.id && isSameDay(parseISO(a.start_time), currentDate));
+          colAppointments = localAppts.filter(a => a.employee_id === col.id && isSameDay(parseISO(a.start_time), dateState));
           
           if (!isHoliday) { 
-              const empSchedule = schedules.find(s => s.employee_id === col.id && s.day_of_week === getDay(currentDate));
+              const empSchedule = schedules.find(s => s.employee_id === col.id && s.day_of_week === getDay(dateState));
               const isAbsent = absences.some(abs => 
                   abs.employee_id === col.id && 
-                  isWithinInterval(startOfDay(currentDate), { start: startOfDay(parseISO(abs.start_date)), end: endOfDay(parseISO(abs.end_date)) })
+                  isWithinInterval(startOfDay(dateState), { start: startOfDay(parseISO(abs.start_date)), end: endOfDay(parseISO(abs.end_date)) })
               );
 
               if (empSchedule && empSchedule.is_working && !isAbsent) {
@@ -574,7 +590,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       }, 0);
 
       return { colAppointments, capacityMinutes, bookedMinutes };
-  }, [localAppts, schedules, currentDate, employees, resizing, holidays, absences]);
+  }, [localAppts, schedules, dateState, employees, resizing, holidays, absences]);
 
   // --- CALCULO ESTADISTICAS (VISTA MENSUAL) ---
   const getDayStats = useCallback((date: Date) => {
@@ -632,15 +648,15 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   }, [calculateColumnData]);
 
   const monthDays = useMemo(() => {
-      if (view !== 'month') return [];
-      const monthStart = startOfMonth(currentDate); const monthEnd = endOfMonth(monthStart);
+      if (viewState !== 'month') return [];
+      const monthStart = startOfMonth(dateState); const monthEnd = endOfMonth(monthStart);
       const startDate = startOfWeek(monthStart, { weekStartsOn: 1 }); const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
       return eachDayOfInterval({ start: startDate, end: endDate });
-  }, [currentDate, view]);
+  }, [dateState, viewState]);
 
   const getNonWorkingBlocks = useCallback((col: ColumnData) => {
     if (col.type !== 'employee') return [];
-    const empSchedule = schedules.find(s => s.employee_id === col.id && s.day_of_week === getDay(currentDate));
+    const empSchedule = schedules.find(s => s.employee_id === col.id && s.day_of_week === getDay(dateState));
     const TOTAL_HEIGHT = (END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE;
     if (!empSchedule || !empSchedule.is_working) return [{ top: 0, height: TOTAL_HEIGHT }];
     const blocks = [];
@@ -652,17 +668,17 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     const topOfBottomBlock = minutesFromGlobalStart * PIXELS_PER_MINUTE;
     if (topOfBottomBlock < TOTAL_HEIGHT) blocks.push({ top: topOfBottomBlock, height: TOTAL_HEIGHT - topOfBottomBlock });
     return blocks;
-  }, [schedules, currentDate, START_HOUR, END_HOUR, PIXELS_PER_MINUTE]);
+  }, [schedules, dateState, START_HOUR, END_HOUR, PIXELS_PER_MINUTE]);
 
   const getAbsenceOverlay = useCallback((col: ColumnData) => {
       const TOTAL_HEIGHT = (END_HOUR - START_HOUR + 1) * 60 * PIXELS_PER_MINUTE;
-      const checkDate = col.type === 'date' ? col.data : currentDate;
+      const checkDate = col.type === 'date' ? col.data : dateState;
       const holiday = holidays.find(h => h.date === format(checkDate, 'yyyy-MM-dd'));
       if (holiday) return { height: TOTAL_HEIGHT, bgColor: 'bg-emerald-50', stripeColor: '#d1fae5', label: 'Día Festivo', note: holiday.name, icon: Flag, isHoliday: true };
       if (col.type === 'employee') {
           const activeAbsence = absences.find(abs => {
               const rangeStart = parseISO(abs.start_date); const rangeEnd = parseISO(abs.end_date);
-              return abs.employee_id === col.id && isWithinInterval(startOfDay(currentDate), { start: startOfDay(rangeStart), end: endOfDay(rangeEnd) });
+              return abs.employee_id === col.id && isWithinInterval(startOfDay(dateState), { start: startOfDay(rangeStart), end: endOfDay(rangeEnd) });
           });
           if (activeAbsence) {
               let bgColor = 'bg-slate-100'; let stripeColor = '#cbd5e1'; let label = 'Ausente'; let icon = AlertCircle;
@@ -676,13 +692,10 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           }
       }
       return null;
-  }, [absences, currentDate, START_HOUR, END_HOUR, PIXELS_PER_MINUTE, holidays]);
+  }, [absences, dateState, START_HOUR, END_HOUR, PIXELS_PER_MINUTE, holidays]);
 
   return (
     <>
-      {/* 1. AJUSTE DE ALTURA PARA MÓVIL (dvh) 
-         Esto asegura que la barra del navegador (Safari/Chrome) no tape el final
-      */}
       <div className="flex flex-col h-[calc(100dvh-8rem)] md:h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
         <div className="flex flex-col lg:flex-row items-center justify-between px-4 py-3 bg-white border-b border-slate-200 gap-4 shrink-0">
             <div className="flex items-center gap-2">
@@ -690,7 +703,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                 <div className="relative group">
                      <Button variant="outline" className="min-w-[200px] justify-start text-left pl-3 font-semibold">
                         <CalendarIcon size={16} className="mr-2 text-slate-500"/>
-                        <span className="capitalize">{format(currentDate, "EEEE d MMMM", { locale: es })}</span>
+                        <span className="capitalize">{format(dateState, "EEEE d MMMM", { locale: es })}</span>
                     </Button>
                     <input type="date" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={(e) => handleNavigate('date', parseISO(e.target.value))} />
                 </div>
@@ -700,7 +713,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
             
             <div className="flex bg-slate-100 p-1 rounded-lg">
                 {['day', '3day', 'week', 'month'].map((v) => (
-                    <button key={v} onClick={() => handleNavigate('view', v)} className={cn("px-3 py-1 text-xs font-bold rounded-md transition-all", view === v ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700")}>
+                    <button key={v} onClick={() => handleNavigate('view', v)} className={cn("px-3 py-1 text-xs font-bold rounded-md transition-all", viewState === v ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700")}>
                         {v === 'day' ? 'Día' : v === '3day' ? '3 Días' : v === 'week' ? 'Semana' : 'Mes'}
                     </button>
                 ))}
@@ -712,7 +725,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     <Button 
                         className="bg-blue-600 text-white gap-2" 
                         onClick={() => {
-                            setNewApptData({ date: currentDate, startTime: new Date() });
+                            setNewApptData({ date: dateState, startTime: new Date() });
                             setIsCreateDialogOpen(true);
                         }}
                     >
@@ -724,8 +737,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
         {/* CONTENEDOR PRINCIPAL */}
         <div className="flex-1 overflow-auto relative w-full h-full bg-slate-50/30 touch-pan-x touch-pan-y" onClick={() => setContextMenu(null)}>
-            {view === 'month' ? (
-                // VISTA MENSUAL (Sin cambios mayores, solo h-full asegurado)
+            {viewState === 'month' ? (
                 <div className="flex flex-col min-h-full bg-white p-4">
                     <div className="grid grid-cols-7 mb-2 border-b border-slate-200 pb-2">
                         {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
@@ -734,7 +746,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     </div>
                     <div className="grid grid-cols-7 flex-1 auto-rows-fr gap-1">
                         {monthDays.map(day => {
-                            const isCurrentMonth = isSameMonth(day, currentDate);
+                            const isCurrentMonth = isSameMonth(day, dateState);
                             const stats = getDayStats(day); 
                             const isToday = isSameDay(day, new Date());
                             const holiday = holidays.find(h => h.date === format(day, 'yyyy-MM-dd'));
@@ -771,17 +783,14 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     </div>
                 </div>
             ) : (
-                // --- VISTAS DÍA / SEMANA (CORRECCIÓN MÓVIL AQUI) ---
                 <div className="flex flex-col min-w-[1000px] h-full relative">
-                    
-                    {/* CABECERA STICKY (Nombres de Empleados) */}
                     <div className="flex sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm w-full">
                         <div className="sticky left-0 top-0 z-50 w-14 shrink-0 bg-white border-r border-slate-200 h-[100px]"></div>
                         <div className="flex flex-1">
                             {columns.map((col) => {
                                 const stats = getColumnStats(col);
                                 return (
-                                    <div key={col.id} className={cn("flex-1 min-w-[150px] border-r border-slate-200/60 p-2 flex flex-col justify-between gap-1 h-[100px]", col.isToday && view !== 'day' ? "bg-blue-50/50" : "")}>
+                                    <div key={col.id} className={cn("flex-1 min-w-[150px] border-r border-slate-200/60 p-2 flex flex-col justify-between gap-1 h-[100px]", col.isToday && viewState !== 'day' ? "bg-blue-50/50" : "")}>
                                         <div className="flex items-start justify-between w-full">
                                             {col.type === 'employee' ? (
                                                 <div className="flex items-center gap-2">
@@ -819,14 +828,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                         </div>
                     </div>
 
-                    {/* CUERPO DEL CALENDARIO (Grid) */}
                     <div className="flex flex-1 relative bg-white h-fit min-h-full" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
-                        {/* COLUMNA DE HORAS (Sticky Izquierda) */}
                         <div className="sticky left-0 z-30 w-14 bg-white border-r border-slate-200 h-fit min-h-full shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             {timeSlots.map((slot, i) => (<div key={i} style={{ height: `${30 * PIXELS_PER_MINUTE}px` }} className="flex justify-center pt-1.5 border-b border-slate-50 bg-white"><span className="text-[10px] font-semibold text-slate-400">{format(slot, 'HH:mm')}</span></div>))}
                         </div>
 
-                        {/* COLUMNAS DE DATOS */}
                         <div className="flex flex-1 relative h-fit min-h-full">
                             {dragGhost && (<div className="absolute z-50 rounded-lg border-2 border-dashed border-blue-400 bg-blue-100/80 p-2 flex flex-col justify-center items-center text-blue-700 pointer-events-none" style={{ top: `${dragGhost.top}px`, height: `${dragGhost.height}px`, left: `${(dragGhost.colIndex * (100 / columns.length))}%`, width: `${100 / columns.length}%`, marginLeft: '2px', maxWidth: 'calc(' + (100 / columns.length) + '% - 4px)' }}><div className="font-bold text-xs flex items-center gap-1"><Clock size={12} />{format(dragGhost.startTime, 'HH:mm')}</div></div>)}
 
@@ -948,7 +954,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
       <AppointmentDetailDialog open={isDetailOpen} onOpenChange={setIsDetailOpen} appointment={selectedAppt} employees={employees} onUpdate={handleRefresh} />
       
-      {/* INTEGRACIÓN DEL DIÁLOGO DE NUEVA CITA */}
       <NewAppointmentDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
