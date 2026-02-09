@@ -207,16 +207,12 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const [tooltipData, setTooltipData] = useState<any | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{x:number, y:number} | null>(null);
   const [hoveredClient, setHoveredClient] = useState<string | null>(null);
-  
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newApptData, setNewApptData] = useState<{ employeeId?: string; date: Date; startTime: Date } | null>(null);
-  
   const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const ghostRef = useRef<DragGhost | null>(null);
-
   const canEdit = useMemo(() => ['admin', 'manager', 'receptionist'].includes(userRole || ''), [userRole]);
-
   const handleRefresh = useCallback(() => { setRefreshKey(prev => prev + 1); }, []);
 
   // --- 2. MANEJO DE NAVEGACIÓN MEJORADO ---

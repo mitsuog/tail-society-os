@@ -12,10 +12,12 @@ export default async function AppointmentsPage({
   const supabase = await createClient();
   const params = await searchParams;
 
-  // 1. Lógica de Fecha
+  // 1. Lógica de Fecha (CORREGIDA CON MEDIODÍA)
   let selectedDate = new Date();
   if (params.date) {
-    const parsed = parseISO(params.date);
+    // TRUCO: Le agregamos 'T12:00:00' para forzar el mediodía.
+    // Esto evita que el cambio de zona horaria nos regrese al día anterior.
+    const parsed = parseISO(params.date + 'T12:00:00');
     if (isValid(parsed)) selectedDate = parsed;
   }
   
