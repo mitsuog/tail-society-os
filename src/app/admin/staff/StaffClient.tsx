@@ -20,7 +20,6 @@ export default function StaffPage() {
     
     const supabase = createClient();
     
-    // Consulta optimizada
     const { data, error } = await supabase.from('employees')
       .select(`
         *,
@@ -46,29 +45,34 @@ export default function StaffPage() {
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
-    // ESTRUCTURA PRINCIPAL: Flex Columna sin scroll global
+    // ESTRUCTURA APP-LIKE ROBUSTA
+    // h-[calc(100vh-theme(spacing.16))] ajusta si tienes un navbar superior global, 
+    // sino h-full/h-screen funciona bien si el padre lo permite.
     <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        {/* 1. HEADER FIJO (Fuera del scroll) */}
-        <div className="w-full shrink-0 bg-slate-50/30 z-10">
-            <div className="max-w-[1600px] mx-auto px-4 md:px-6 pt-6 pb-2">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 gap-4 bg-transparent">
-                    <div>
+        {/* 1. HEADER FIJO Y SEGURO PARA MÓVIL */}
+        {/* z-30 asegura que flote sobre todo. pl-12 en móvil evita el botón hamburguesa */}
+        <div className="shrink-0 sticky top-0 z-30 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60">
+            <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    
+                    {/* FIX HAMBURGUESA: pl-10 md:pl-0 empuja el título a la derecha solo en móvil */}
+                    <div className="pl-10 md:pl-0">
                         <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Users className="text-slate-600 h-6 w-6" /> Equipo de Trabajo
                         </h1>
-                        <p className="text-sm text-slate-500 mt-1">
-                            Administración de perfiles, contratos y expediente digital.
+                        <p className="text-xs md:text-sm text-slate-500 mt-1">
+                            Administración de perfiles y contratos.
                         </p>
                     </div>
 
-                    <div className="flex gap-2 w-full md:w-auto">
-                        <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none shadow-sm">
-                            <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Empleado
+                    <div className="flex gap-2 w-full md:w-auto pl-10 md:pl-0">
+                        <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none shadow-sm text-xs md:text-sm h-9 md:h-10">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Nuevo
                         </Button>
                         
                         <Link href="/admin/payroll" className="flex-1 md:flex-none">
-                            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 w-full shadow-sm">
+                            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 w-full shadow-sm text-xs md:text-sm h-9 md:h-10">
                                 <DollarSign className="mr-2 h-4 w-4" /> Nómina
                             </Button>
                         </Link>
@@ -77,29 +81,31 @@ export default function StaffPage() {
             </div>
         </div>
 
-        {/* 2. ÁREA DE CONTENIDO (Scrollable) */}
-        <div className="flex-1 overflow-y-auto w-full">
-            <div className="px-4 md:px-6 py-4 w-full max-w-[1600px] mx-auto pb-24">
+        {/* 2. CONTENIDO CON SCROLL INDEPENDIENTE */}
+        <div className="flex-1 overflow-y-auto w-full scroll-smooth">
+            <div className="px-4 md:px-6 py-6 w-full max-w-[1600px] mx-auto pb-32">
                 
-                {/* Mensaje de Error */}
                 {errorMsg && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3 mb-6">
+                    <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3 mb-6 animate-in fade-in slide-in-from-top-2">
                         <AlertTriangle className="h-5 w-5 shrink-0" />
                         <div>
-                            <p className="font-bold">Error cargando datos</p>
-                            <p className="text-sm">{errorMsg}</p>
+                            <p className="font-bold text-sm">Error cargando datos</p>
+                            <p className="text-xs">{errorMsg}</p>
                         </div>
                     </div>
                 )}
 
-                {/* Grid de Empleados */}
                 {loading ? (
-                    <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-slate-300"/></div>
+                    <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                        <Loader2 className="animate-spin h-10 w-10 text-slate-300"/>
+                        <p className="text-sm font-medium">Cargando equipo...</p>
+                    </div>
                 ) : (
-                    <StaffGrid initialEmployees={employees} />
+                    <div className="animate-in fade-in duration-500 slide-in-from-bottom-4">
+                        <StaffGrid initialEmployees={employees} />
+                    </div>
                 )}
 
-                {/* MODAL CREAR */}
                 <AddStaffDialog isOpen={isAddOpen} onClose={() => { setIsAddOpen(false); handleRefresh(); }} />
             </div>
         </div>
