@@ -20,7 +20,7 @@ export default function StaffPage() {
     
     const supabase = createClient();
     
-    // Consulta optimizada con !fk explícitos para evitar ambigüedades
+    // Consulta optimizada
     const { data, error } = await supabase.from('employees')
       .select(`
         *,
@@ -46,17 +46,13 @@ export default function StaffPage() {
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
-    // ESTRUCTURA DE SCROLL CORREGIDA:
-    // 1. El padre fuerza el tamaño completo y oculta desbordes
+    // ESTRUCTURA PRINCIPAL: Flex Columna sin scroll global
     <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        {/* 2. El hijo ocupa el espacio restante (flex-1) y maneja el scroll vertical (overflow-y-auto) */}
-        <div className="flex-1 overflow-y-auto w-full">
-            
-            <div className="p-4 md:p-6 space-y-6 w-full max-w-[1600px] mx-auto animate-in fade-in duration-500 pb-24">
-                
-                {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 gap-4">
+        {/* 1. HEADER FIJO (Fuera del scroll) */}
+        <div className="w-full shrink-0 bg-slate-50/30 z-10">
+            <div className="max-w-[1600px] mx-auto px-4 md:px-6 pt-6 pb-2">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 gap-4 bg-transparent">
                     <div>
                         <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Users className="text-slate-600 h-6 w-6" /> Equipo de Trabajo
@@ -67,22 +63,28 @@ export default function StaffPage() {
                     </div>
 
                     <div className="flex gap-2 w-full md:w-auto">
-                        <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none">
-                            <PlusCircle className="mr-2 h-4 w-4" /> Nuevo
+                        <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none shadow-sm">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Empleado
                         </Button>
                         
                         <Link href="/admin/payroll" className="flex-1 md:flex-none">
-                            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 w-full">
+                            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 w-full shadow-sm">
                                 <DollarSign className="mr-2 h-4 w-4" /> Nómina
                             </Button>
                         </Link>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        {/* 2. ÁREA DE CONTENIDO (Scrollable) */}
+        <div className="flex-1 overflow-y-auto w-full">
+            <div className="px-4 md:px-6 py-4 w-full max-w-[1600px] mx-auto pb-24">
                 
                 {/* Mensaje de Error */}
                 {errorMsg && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3">
-                        <AlertTriangle className="h-5 w-5" />
+                    <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3 mb-6">
+                        <AlertTriangle className="h-5 w-5 shrink-0" />
                         <div>
                             <p className="font-bold">Error cargando datos</p>
                             <p className="text-sm">{errorMsg}</p>
