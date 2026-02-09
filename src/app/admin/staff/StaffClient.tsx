@@ -45,16 +45,19 @@ export default function StaffPage() {
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
-    // ESTRUCTURA PRINCIPAL SIN SCROLL GLOBAL
+    // ESTRUCTURA PRINCIPAL (Sin scroll global en el body)
     <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        {/* 1. HEADER FIJO (Sticky) */}
-        <div className="shrink-0 sticky top-0 z-30 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 transition-all">
+        {/* 1. HEADER FIJO (Sticky)
+            CORRECCIÓN: Bajamos z-index a 10. 
+            Esto permite que flote sobre la lista, pero se quede POR DEBAJO del menú hamburger (z-20+).
+        */}
+        <div className="shrink-0 sticky top-0 z-10 w-full border-b border-slate-200 bg-white/90 backdrop-blur-sm supports-[backdrop-filter]:bg-white/60 transition-all">
             <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     
-                    {/* FIX HAMBURGUESA: pl-16 (64px) deja espacio suficiente para el icono del menú en móvil */}
-                    <div className="pl-16 md:pl-0 w-full md:w-auto">
+                    {/* TÍTULO: pl-14 deja espacio para el hamburger en móvil sin taparlo */}
+                    <div className="pl-14 md:pl-0 w-full md:w-auto">
                         <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Users className="text-slate-600 h-6 w-6" /> Equipo de Trabajo
                         </h1>
@@ -63,8 +66,8 @@ export default function StaffPage() {
                         </p>
                     </div>
 
-                    {/* BOTONES: También empujados a la derecha en móvil */}
-                    <div className="flex gap-2 w-full md:w-auto pl-16 md:pl-0">
+                    {/* BOTONES: También empujados para alinearse visualmente en móvil */}
+                    <div className="flex gap-2 w-full md:w-auto pl-14 md:pl-0">
                         <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none shadow-sm text-xs md:text-sm h-9 md:h-10">
                             <PlusCircle className="mr-2 h-4 w-4" /> Nuevo
                         </Button>
