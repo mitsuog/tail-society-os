@@ -45,19 +45,16 @@ export default function StaffPage() {
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
-    // ESTRUCTURA APP-LIKE ROBUSTA
-    // h-[calc(100vh-theme(spacing.16))] ajusta si tienes un navbar superior global, 
-    // sino h-full/h-screen funciona bien si el padre lo permite.
+    // ESTRUCTURA PRINCIPAL SIN SCROLL GLOBAL
     <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        {/* 1. HEADER FIJO Y SEGURO PARA MÓVIL */}
-        {/* z-30 asegura que flote sobre todo. pl-12 en móvil evita el botón hamburguesa */}
-        <div className="shrink-0 sticky top-0 z-30 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60">
+        {/* 1. HEADER FIJO (Sticky) */}
+        <div className="shrink-0 sticky top-0 z-30 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 transition-all">
             <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     
-                    {/* FIX HAMBURGUESA: pl-10 md:pl-0 empuja el título a la derecha solo en móvil */}
-                    <div className="pl-10 md:pl-0">
+                    {/* FIX HAMBURGUESA: pl-16 (64px) deja espacio suficiente para el icono del menú en móvil */}
+                    <div className="pl-16 md:pl-0 w-full md:w-auto">
                         <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Users className="text-slate-600 h-6 w-6" /> Equipo de Trabajo
                         </h1>
@@ -66,7 +63,8 @@ export default function StaffPage() {
                         </p>
                     </div>
 
-                    <div className="flex gap-2 w-full md:w-auto pl-10 md:pl-0">
+                    {/* BOTONES: También empujados a la derecha en móvil */}
+                    <div className="flex gap-2 w-full md:w-auto pl-16 md:pl-0">
                         <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none shadow-sm text-xs md:text-sm h-9 md:h-10">
                             <PlusCircle className="mr-2 h-4 w-4" /> Nuevo
                         </Button>
@@ -81,7 +79,7 @@ export default function StaffPage() {
             </div>
         </div>
 
-        {/* 2. CONTENIDO CON SCROLL INDEPENDIENTE */}
+        {/* 2. ÁREA DE CONTENIDO (Scroll Independiente) */}
         <div className="flex-1 overflow-y-auto w-full scroll-smooth">
             <div className="px-4 md:px-6 py-6 w-full max-w-[1600px] mx-auto pb-32">
                 
