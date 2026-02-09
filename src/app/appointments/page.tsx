@@ -1,7 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import { parseISO, isValid } from 'date-fns';
-// Usamos el mismo componente CalendarBoard que ya incluye todo
-import CalendarBoard from '@/components/calendar/CalendarBoard'; 
+import CalendarBoard from '@/components/calendar/CalendarBoard';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +12,7 @@ export default async function AppointmentsPage({
   const supabase = await createClient();
   const params = await searchParams;
 
-  // 1. Lógica de Fecha (Igual que en CalendarPage)
+  // 1. Lógica de Fecha
   let selectedDate = new Date();
   if (params.date) {
     const parsed = parseISO(params.date);
@@ -26,18 +25,25 @@ export default async function AppointmentsPage({
   const { data: employees } = await supabase
     .from('employees')
     .select('*')
-    .eq('active', true) 
+    .eq('is_active', true) // Asegúrate que tu columna se llama 'is_active' o 'active' en la BD
     .order('first_name');
 
   return (
-    <div className="h-[calc(100vh-4rem)] w-full flex flex-col bg-slate-50/50">
-      <div className="flex-1 overflow-hidden p-2 md:p-4">
-        {/* Usamos el CalendarBoard AUTÓNOMO */}
+    // CAMBIO 1: Usamos h-full porque el layout ya limita la pantalla.
+    // Quitamos 'bg-slate-50/50' para que no se superponga con el fondo del calendario.
+    <div className="h-full w-full flex flex-col p-0 md:p-2 overflow-hidden">
+      
+      {/* CAMBIO 2: Quitamos 'overflow-hidden' de aquí. 
+          El CalendarBoard ya tiene su propio control de desborde.
+          Esto permite que el scroll táctil funcione nativamente. */}
+      <div className="flex-1 w-full h-full min-h-0">
         <CalendarBoard 
             currentDate={selectedDate} 
             view={currentView} 
             employees={employees || []}
             appointments={[]} 
+            // Pasamos el rol si lo tienes disponible, sino por defecto es employee
+            userRole="admin" 
         />
       </div>
     </div>

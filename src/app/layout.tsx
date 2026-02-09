@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
-import SidebarWrapper from "@/components/SidebarWrapper"; 
+import SidebarWrapper from "@/components/SidebarWrapper";
 import { createClient } from "@/utils/supabase/server";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -17,11 +17,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // 1. OBTENER ROL DEL USUARIO EN EL SERVIDOR
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  let userRole = 'employee'; // Rol por defecto (el más restringido)
+  let userRole = 'employee';
 
   if (user) {
     const { data } = await supabase
@@ -37,15 +36,15 @@ export default async function RootLayout({
 
   return (
     <html lang="es">
+      {/* CLAVE: h-screen y overflow-hidden aquí evitan que 'rebote' la página completa en iPhone */}
       <body 
-        className={`${inter.className} bg-slate-50 flex h-screen overflow-hidden`}
-        // ESTA LÍNEA EVITA EL ERROR DE HYDRATION CAUSADO POR EXTENSIONES
+        className={`${inter.className} bg-slate-50 flex h-screen w-screen overflow-hidden`}
         suppressHydrationWarning={true}
       >
-        {/* 2. PASAR EL ROL AL COMPONENTE CLIENTE */}
         <SidebarWrapper userRole={userRole} />
         
-        <main className="flex-1 overflow-y-auto relative w-full">
+        {/* Main con overflow-hidden para forzar el scroll solo en los hijos */}
+        <main className="flex-1 flex flex-col relative w-full h-full overflow-hidden">
           {children}
         </main>
         
