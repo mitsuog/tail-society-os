@@ -12,8 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { 
     CalendarIcon, Loader2, RefreshCw, Save, Scissors, Store, Calculator,
-    ArrowUpCircle, ArrowDownCircle, Coins,
-    ChevronLeft, ChevronRight, Download, Eye
+    ArrowUpCircle, Coins, ChevronLeft, ChevronRight, Download, Eye, AlertCircle
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { getPayrollPreview, savePayrollRun } from '@/app/actions/payroll-actions';
@@ -30,14 +29,14 @@ interface PayrollDetail {
     calculation_note: string;
     // Campos financieros
     full_salary_weekly?: number;
-    salary_penalty?: number;
+    salary_penalty?: number;     // <--- Descuento Sueldo Base
     payout_bank: number;
     payout_cash_salary: number;
     payout_commission: number;
     payout_cash_total: number;
     total_payout: number;
     commission_bonus: number;
-    commission_penalty: number;
+    commission_penalty: number;  // <--- Descuento Comisión
 }
 
 interface PayrollData {
@@ -135,9 +134,12 @@ export default function PayrollPage() {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount || 0);
   };
 
+  // Totales
   const totalBank = data?.details.reduce((acc, item) => acc + (item.payout_bank || 0), 0) || 0;
   const totalCashSalary = data?.details.reduce((acc, item) => acc + (item.payout_cash_salary || 0), 0) || 0;
   const totalCommission = data?.details.reduce((acc, item) => acc + (item.payout_commission || 0), 0) || 0;
+  // Total Deducciones
+  const totalDeductionsGlobal = data?.details.reduce((acc, item) => acc + (item.salary_penalty || 0) + (item.commission_penalty || 0), 0) || 0;
   const totalNet = data?.details.reduce((acc, item) => acc + (item.total_payout || 0), 0) || 0;
 
   return (
@@ -217,7 +219,7 @@ export default function PayrollPage() {
       {!loading && data && (
         <div className="animate-in fade-in duration-500 space-y-6">
           
-          {/* KPIs (IGUAL QUE ANTES) */}
+          {/* KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="overflow-hidden border-blue-100 shadow-sm">
                 <div className="bg-blue-50/50 p-3 border-b border-blue-100 flex justify-between items-center">
@@ -326,104 +328,126 @@ export default function PayrollPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-slate-100 bg-slate-50/50">
-                    <TableHead className="pl-6 h-10 w-[25%] text-xs font-bold text-slate-700">COLABORADOR</TableHead>
+                    <TableHead className="pl-6 h-10 w-[20%] text-xs font-bold text-slate-700">COLABORADOR</TableHead>
                     <TableHead className="text-center h-10 text-xs font-bold text-slate-700">DÍAS</TableHead>
                     <TableHead className="text-right h-10 text-xs font-bold text-slate-500">DEPÓSITO</TableHead>
                     <TableHead className="text-right h-10 text-xs font-bold text-orange-600/80">SUELDO EFEC.</TableHead>
                     <TableHead className="text-right h-10 text-xs font-bold text-green-600/80">COMISIÓN</TableHead>
-                    <TableHead className="text-right h-10 text-xs font-bold text-slate-900">TOTAL NETO</TableHead>
+                    {/* NUEVA COLUMNA DE DEDUCCIONES */}
+                    <TableHead className="text-right h-10 text-xs font-bold text-red-600/80">DEDUCCIONES</TableHead>
+                    <TableHead className="text-right h-10 pr-6 text-xs font-bold text-slate-900">TOTAL NETO</TableHead>
                     <TableHead className="text-center h-10 text-xs font-bold text-slate-700 w-[100px]">RECIBO</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.details.map((item) => (
-                    <TableRow key={item.employee.id} className="group hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                      {/* COL 1: EMPLEADO + BONOS */}
-                      <TableCell className="pl-6 py-3">
-                        <div className="flex items-center gap-3">
-                            <div 
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm" 
-                                style={{ backgroundColor: item.employee.color || '#94a3b8' }}
-                            >
-                                {item.employee.name.charAt(0)}
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="font-semibold text-sm text-slate-900">{item.employee.name}</span>
-                                <span className="text-[10px] text-slate-400">
-                                    {item.participation_pct}% {item.commission_type === 'grooming' ? 'Grooming' : 'Tienda'}
-                                </span>
-                            </div>
-                        </div>
-                        {/* INDICADORES DE BONO / PENALIZACIÓN */}
-                        {(item.commission_bonus > 0 || item.commission_penalty > 0) && (
-                            <div className="ml-11 mt-1 flex gap-2">
-                                {item.commission_bonus > 0 && (
-                                    <span className="text-[9px] text-green-700 bg-green-50 px-1 rounded flex items-center">
-                                        <ArrowUpCircle size={8} className="mr-1"/> +{formatMoney(item.commission_bonus)}
-                                    </span>
-                                )}
-                                {item.commission_penalty > 0 && (
-                                    <span className="text-[9px] text-red-700 bg-red-50 px-1 rounded flex items-center">
-                                        <ArrowDownCircle size={8} className="mr-1"/> -{formatMoney(item.commission_penalty)}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                      </TableCell>
+                  {data.details.map((item) => {
+                      const totalDeduction = (item.salary_penalty || 0) + (item.commission_penalty || 0);
                       
-                      {/* COL 2: DÍAS */}
-                      <TableCell className="text-center py-3">
-                        <div className="inline-flex flex-col items-center">
-                            <span className="font-bold text-sm text-slate-700">{item.days_worked}</span>
-                            {item.lost_days > 0 && (
-                                <span className="text-[9px] text-red-500 font-medium">-{item.lost_days} Faltas</span>
+                      return (
+                        <TableRow key={item.employee.id} className="group hover:bg-slate-50/50 transition-colors border-b border-slate-100">
+                          {/* COL 1: EMPLEADO + BONOS */}
+                          <TableCell className="pl-6 py-3">
+                            <div className="flex items-center gap-3">
+                                <div 
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm" 
+                                    style={{ backgroundColor: item.employee.color || '#94a3b8' }}
+                                >
+                                    {item.employee.name.charAt(0)}
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="font-semibold text-sm text-slate-900">{item.employee.name}</span>
+                                    <span className="text-[10px] text-slate-400">
+                                        {item.participation_pct}% {item.commission_type === 'grooming' ? 'Grooming' : 'Tienda'}
+                                    </span>
+                                </div>
+                            </div>
+                            {/* SOLO MOSTRAMOS BONO POSITIVO AQUÍ */}
+                            {item.commission_bonus > 0 && (
+                                <div className="ml-11 mt-1">
+                                    <span className="text-[9px] text-green-700 bg-green-50 px-1 rounded flex items-center w-fit">
+                                        <ArrowUpCircle size={8} className="mr-1"/> +{formatMoney(item.commission_bonus)} Bono
+                                    </span>
+                                </div>
                             )}
-                        </div>
-                      </TableCell>
+                          </TableCell>
+                          
+                          {/* COL 2: DÍAS */}
+                          <TableCell className="text-center py-3">
+                            <div className="inline-flex flex-col items-center">
+                                <span className="font-bold text-sm text-slate-700">{item.days_worked}</span>
+                                {item.lost_days > 0 && (
+                                    <span className="text-[9px] text-red-500 font-medium flex items-center">
+                                        -{item.lost_days} Faltas
+                                    </span>
+                                )}
+                            </div>
+                          </TableCell>
 
-                      {/* COL 3: DEPÓSITO */}
-                      <TableCell className="text-right py-3 font-mono text-sm text-slate-600 bg-slate-50/30 border-l border-white">
-                        {formatMoney(item.payout_bank)}
-                      </TableCell>
+                          {/* COL 3: DEPÓSITO */}
+                          <TableCell className="text-right py-3 font-mono text-sm text-slate-600 bg-slate-50/30 border-l border-white">
+                            {formatMoney(item.payout_bank)}
+                          </TableCell>
 
-                      {/* COL 4: SUELDO EFECTIVO */}
-                      <TableCell className="text-right py-3 font-mono font-medium text-sm text-orange-700 bg-orange-50/30 border-l border-white">
-                        {formatMoney(item.payout_cash_salary)}
-                      </TableCell>
+                          {/* COL 4: SUELDO EFECTIVO */}
+                          <TableCell className="text-right py-3 font-mono font-medium text-sm text-orange-700 bg-orange-50/30 border-l border-white">
+                            {formatMoney(item.payout_cash_salary)}
+                          </TableCell>
 
-                      {/* COL 5: COMISIONES */}
-                      <TableCell className="text-right py-3 font-mono font-medium text-sm text-green-700 bg-green-50/30 border-l border-white">
-                        {formatMoney(item.payout_commission)}
-                      </TableCell>
+                          {/* COL 5: COMISIONES */}
+                          <TableCell className="text-right py-3 font-mono font-medium text-sm text-green-700 bg-green-50/30 border-l border-white">
+                            {formatMoney(item.payout_commission)}
+                          </TableCell>
 
-                      {/* COL 6: TOTAL */}
-                      <TableCell className="text-right py-3">
-                        <span className="text-sm font-bold text-slate-900">
-                            {formatMoney(item.total_payout)}
-                        </span>
-                      </TableCell>
+                          {/* COL 6: DEDUCCIONES (NUEVO) */}
+                          <TableCell className="text-right py-3 font-mono text-sm border-l border-white bg-red-50/30 text-red-600">
+                            {totalDeduction > 0 ? (
+                                <div className="flex flex-col items-end">
+                                    <span className="font-bold">-{formatMoney(totalDeduction)}</span>
+                                    <div className="flex flex-col items-end gap-0.5 mt-0.5">
+                                        {(item.salary_penalty || 0) > 0 && (
+                                            <span className="text-[9px] text-red-400 opacity-90 whitespace-nowrap">
+                                                Sal: {formatMoney(item.salary_penalty || 0)}
+                                            </span>
+                                        )}
+                                        {(item.commission_penalty || 0) > 0 && (
+                                            <span className="text-[9px] text-red-400 opacity-90 whitespace-nowrap">
+                                                Com: {formatMoney(item.commission_penalty || 0)}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : <span className="text-slate-300">-</span>}
+                          </TableCell>
 
-                      {/* COL 7: ACCIONES DE RECIBO */}
-                      <TableCell className="text-center py-3 pr-6">
-                        <div className="flex justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <Button 
-                                variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50"
-                                onClick={(e) => { e.stopPropagation(); handlePreview(item); }}
-                                title="Ver Recibo"
-                            >
-                                <Eye size={14} />
-                            </Button>
-                            <Button 
-                                variant="ghost" size="icon" className="h-7 w-7 text-slate-600 hover:bg-slate-100"
-                                onClick={(e) => { e.stopPropagation(); handleDownload(item); }}
-                                title="Descargar PDF"
-                            >
-                                <Download size={14} />
-                            </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          {/* COL 7: TOTAL */}
+                          <TableCell className="text-right pr-6 py-3">
+                            <span className="text-sm font-bold text-slate-900">
+                                {formatMoney(item.total_payout)}
+                            </span>
+                          </TableCell>
+
+                          {/* COL 8: ACCIONES */}
+                          <TableCell className="text-center py-3 pr-6">
+                            <div className="flex justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                <Button 
+                                    variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50"
+                                    onClick={(e) => { e.stopPropagation(); handlePreview(item); }}
+                                    title="Ver Recibo"
+                                >
+                                    <Eye size={14} />
+                                </Button>
+                                <Button 
+                                    variant="ghost" size="icon" className="h-7 w-7 text-slate-600 hover:bg-slate-100"
+                                    onClick={(e) => { e.stopPropagation(); handleDownload(item); }}
+                                    title="Descargar PDF"
+                                >
+                                    <Download size={14} />
+                                </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                  })}
 
                   {/* FILA DE TOTALES */}
                   <TableRow className="bg-slate-900 hover:bg-slate-900 border-t-2 border-slate-800">
@@ -438,6 +462,9 @@ export default function PayrollPage() {
                       </TableCell>
                       <TableCell className="text-right py-3 font-mono font-bold text-sm text-green-300">
                           {formatMoney(totalCommission)}
+                      </TableCell>
+                      <TableCell className="text-right py-3 font-mono font-bold text-sm text-red-300">
+                          -{formatMoney(totalDeductionsGlobal)}
                       </TableCell>
                       <TableCell className="text-right py-3 font-mono font-bold text-base text-white">
                           {formatMoney(totalNet)}
