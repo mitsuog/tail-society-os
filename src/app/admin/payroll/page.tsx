@@ -1,7 +1,7 @@
-'use client';
+'use client'; 
 
 import { useState, useEffect } from 'react';
-import { format, startOfWeek, endOfWeek, addDays, subWeeks, addWeeks, isSameDay } from 'date-fns';
+import { format, startOfWeek, endOfWeek, subWeeks, addWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,26 +11,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { 
-    CalendarIcon, 
-    Loader2, 
-    RefreshCw, 
-    Save,
-    Scissors, 
-    Store, 
-    Calculator,
-    ArrowUpCircle,
-    ArrowDownCircle,
-    Wallet,
-    CreditCard,
-    Coins,
-    ChevronLeft,
-    ChevronRight
+    CalendarIcon, Loader2, RefreshCw, Save, Scissors, Store, Calculator,
+    ArrowUpCircle, ArrowDownCircle, Coins,
+    ChevronLeft, ChevronRight, Download, Eye
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { getPayrollPreview, savePayrollRun } from '@/app/actions/payroll-actions';
 import { toast } from "sonner";
+import { downloadSingleReceipt, previewReceipt } from "@/utils/payroll-receipt-generator";
 
-// --- INTERFACES ---
+// Interfaces
 interface PayrollDetail {
     employee: { id: string; name: string; role: string; color: string };
     days_worked: number;
@@ -38,6 +28,9 @@ interface PayrollDetail {
     commission_type: string;
     participation_pct: number;
     calculation_note: string;
+    // Campos financieros
+    full_salary_weekly?: number;
+    salary_penalty?: number;
     payout_bank: number;
     payout_cash_salary: number;
     payout_commission: number;
@@ -67,10 +60,8 @@ interface PayrollData {
 }
 
 export default function PayrollPage() {
-  // Estado de Fechas (Inicializamos en la semana actual: Lunes a Domingo)
   const [date, setDate] = useState<{ from: Date; to: Date }>(() => {
     const now = new Date();
-    // Forzamos inicio Lunes (weekStartsOn: 1)
     const start = startOfWeek(now, { weekStartsOn: 1 });
     const end = endOfWeek(now, { weekStartsOn: 1 });
     return { from: start, to: end };
@@ -80,8 +71,6 @@ export default function PayrollPage() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [data, setData] = useState<PayrollData | null>(null);
 
-  // --- LÓGICA DE CARGA INTELIGENTE ---
-  // Esta función hace Sync primero y luego carga los datos
   const syncAndLoadData = async (currentDate: { from: Date; to: Date }) => {
     if (!currentDate.from || !currentDate.to) return;
     
@@ -90,18 +79,13 @@ export default function PayrollPage() {
       const startStr = format(currentDate.from, 'yyyy-MM-dd');
       const endStr = format(currentDate.to, 'yyyy-MM-dd');
 
-      // 1. SINCRONIZACIÓN AUTOMÁTICA (Zettle)
       setLoadingMessage('Sincronizando ventas...');
       const syncRes = await fetch(`/api/integrations/zettle?startDate=${startStr}&endDate=${endStr}`);
       const syncJson = await syncRes.json();
       
-      if (!syncJson.success) {
-          console.warn("Advertencia de Sync:", syncJson.message);
-          // No detenemos el flujo, solo avisamos si es crítico
-      }
+      if (!syncJson.success) console.warn("Advertencia de Sync:", syncJson.message);
 
-      // 2. CÁLCULO DE NÓMINA (Local DB)
-      setLoadingMessage('Calculando comisiones...');
+      setLoadingMessage('Calculando nómina...');
       const result = await getPayrollPreview(startStr, endStr);
       setData(result);
 
@@ -113,29 +97,20 @@ export default function PayrollPage() {
     }
   };
 
-  // Efecto: Se dispara cada vez que cambian las fechas
   useEffect(() => {
     if (date.from && date.to) {
         syncAndLoadData(date);
     }
   }, [date]);
 
-  // --- NAVEGACIÓN SEMANAL ---
   const handlePrevWeek = () => {
-      setDate(prev => ({
-          from: subWeeks(prev.from, 1),
-          to: subWeeks(prev.to, 1)
-      }));
+      setDate(prev => ({ from: subWeeks(prev.from, 1), to: subWeeks(prev.to, 1) }));
   };
 
   const handleNextWeek = () => {
-      setDate(prev => ({
-          from: addWeeks(prev.from, 1),
-          to: addWeeks(prev.to, 1)
-      }));
+      setDate(prev => ({ from: addWeeks(prev.from, 1), to: addWeeks(prev.to, 1) }));
   };
 
-  // --- GUARDAR NÓMINA ---
   const handleSavePayroll = async () => {
     if (!data) return;
     try {
@@ -146,11 +121,20 @@ export default function PayrollPage() {
     }
   };
 
+  const handlePreview = (detail: PayrollDetail) => {
+      if(!data) return;
+      previewReceipt(detail, data.period);
+  };
+
+  const handleDownload = (detail: PayrollDetail) => {
+      if(!data) return;
+      downloadSingleReceipt(detail, data.period);
+  };
+
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount || 0);
   };
 
-  // Totales para fila final
   const totalBank = data?.details.reduce((acc, item) => acc + (item.payout_bank || 0), 0) || 0;
   const totalCashSalary = data?.details.reduce((acc, item) => acc + (item.payout_cash_salary || 0), 0) || 0;
   const totalCommission = data?.details.reduce((acc, item) => acc + (item.payout_commission || 0), 0) || 0;
@@ -159,7 +143,6 @@ export default function PayrollPage() {
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8 pb-20">
       
-      {/* HEADER CON NAVEGACIÓN MEJORADA */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-xl border shadow-sm">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Nómina y Comisiones</h1>
@@ -168,7 +151,6 @@ export default function PayrollPage() {
         
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto bg-slate-50 p-2 rounded-lg border border-slate-100">
              
-             {/* BOTONES DE NAVEGACIÓN RÁPIDA */}
              <div className="flex items-center gap-1">
                  <Button variant="ghost" size="icon" onClick={handlePrevWeek} disabled={loading}>
                     <ChevronLeft className="h-4 w-4" />
@@ -178,10 +160,7 @@ export default function PayrollPage() {
                     <PopoverTrigger asChild>
                       <Button 
                         variant="outline" 
-                        className={cn(
-                            "w-[260px] justify-center text-center font-medium bg-white border-slate-200 shadow-sm", 
-                            !date && "text-muted-foreground"
-                        )}
+                        className={cn("w-[260px] justify-center text-center font-medium bg-white border-slate-200 shadow-sm", !date && "text-muted-foreground")}
                       >
                         <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
                         {date?.from ? (
@@ -199,17 +178,12 @@ export default function PayrollPage() {
                         selected={date}
                         onSelect={(range: any) => {
                             if (range?.from) {
-                                // Si selecciona solo un día, asumimos la semana completa automáticamente para evitar errores
-                                // Si selecciona rango, respetamos el rango
-                                if (!range.to) {
-                                    setDate({ from: range.from, to: range.from }); // Espera segundo clic
-                                } else {
-                                    setDate({ from: range.from, to: range.to });
-                                }
+                                if (!range.to) setDate({ from: range.from, to: range.from });
+                                else setDate({ from: range.from, to: range.to });
                             }
                         }}
                         numberOfMonths={2}
-                        locale={es} // Importante para que Lunes sea primer día visualmente
+                        locale={es}
                       />
                     </PopoverContent>
                   </Popover>
@@ -221,21 +195,13 @@ export default function PayrollPage() {
 
               <div className="h-6 w-px bg-slate-200 mx-2 hidden sm:block"></div>
 
-              {/* BOTONES DE ACCIÓN */}
               <div className="flex gap-2 w-full sm:w-auto">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => syncAndLoadData(date)} 
-                    disabled={loading} 
-                    className="text-slate-500 hover:text-blue-600"
-                    title="Forzar actualización"
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => syncAndLoadData(date)} disabled={loading} className="text-slate-500 hover:text-blue-600" title="Forzar actualización">
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                   </Button>
 
                   <Button onClick={handleSavePayroll} disabled={!data || loading} className="bg-slate-900 hover:bg-slate-800 text-white shadow-md flex-1 sm:flex-none">
-                     <Save className="mr-2 h-4 w-4"/> Guardar Nómina
+                     <Save className="mr-2 h-4 w-4"/> Guardar
                   </Button>
               </div>
         </div>
@@ -251,7 +217,7 @@ export default function PayrollPage() {
       {!loading && data && (
         <div className="animate-in fade-in duration-500 space-y-6">
           
-          {/* KPIs */}
+          {/* KPIs (IGUAL QUE ANTES) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="overflow-hidden border-blue-100 shadow-sm">
                 <div className="bg-blue-50/50 p-3 border-b border-blue-100 flex justify-between items-center">
@@ -360,26 +326,19 @@ export default function PayrollPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-slate-100 bg-slate-50/50">
-                    <TableHead className="pl-6 h-10 w-[30%] text-xs font-bold text-slate-700">COLABORADOR</TableHead>
+                    <TableHead className="pl-6 h-10 w-[25%] text-xs font-bold text-slate-700">COLABORADOR</TableHead>
                     <TableHead className="text-center h-10 text-xs font-bold text-slate-700">DÍAS</TableHead>
-                    <TableHead className="text-right h-10 text-xs font-bold text-slate-500">
-                        DEPÓSITO
-                    </TableHead>
-                    <TableHead className="text-right h-10 text-xs font-bold text-orange-600/80">
-                        SUELDO EFEC.
-                    </TableHead>
-                    <TableHead className="text-right h-10 text-xs font-bold text-green-600/80">
-                        COMISIÓN
-                    </TableHead>
-                    <TableHead className="text-right h-10 pr-6 text-xs font-bold text-slate-900">
-                        TOTAL NETO
-                    </TableHead>
+                    <TableHead className="text-right h-10 text-xs font-bold text-slate-500">DEPÓSITO</TableHead>
+                    <TableHead className="text-right h-10 text-xs font-bold text-orange-600/80">SUELDO EFEC.</TableHead>
+                    <TableHead className="text-right h-10 text-xs font-bold text-green-600/80">COMISIÓN</TableHead>
+                    <TableHead className="text-right h-10 text-xs font-bold text-slate-900">TOTAL NETO</TableHead>
+                    <TableHead className="text-center h-10 text-xs font-bold text-slate-700 w-[100px]">RECIBO</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.details.map((item) => (
                     <TableRow key={item.employee.id} className="group hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                      {/* COL 1: EMPLEADO */}
+                      {/* COL 1: EMPLEADO + BONOS */}
                       <TableCell className="pl-6 py-3">
                         <div className="flex items-center gap-3">
                             <div 
@@ -395,16 +354,17 @@ export default function PayrollPage() {
                                 </span>
                             </div>
                         </div>
+                        {/* INDICADORES DE BONO / PENALIZACIÓN */}
                         {(item.commission_bonus > 0 || item.commission_penalty > 0) && (
                             <div className="ml-11 mt-1 flex gap-2">
-                                {(item.commission_bonus || 0) > 0 && (
+                                {item.commission_bonus > 0 && (
                                     <span className="text-[9px] text-green-700 bg-green-50 px-1 rounded flex items-center">
-                                        <ArrowUpCircle size={8} className="mr-1"/> +{formatMoney(item.commission_bonus || 0)}
+                                        <ArrowUpCircle size={8} className="mr-1"/> +{formatMoney(item.commission_bonus)}
                                     </span>
                                 )}
-                                {(item.commission_penalty || 0) > 0 && (
+                                {item.commission_penalty > 0 && (
                                     <span className="text-[9px] text-red-700 bg-red-50 px-1 rounded flex items-center">
-                                        <ArrowDownCircle size={8} className="mr-1"/> -{formatMoney(item.commission_penalty || 0)}
+                                        <ArrowDownCircle size={8} className="mr-1"/> -{formatMoney(item.commission_penalty)}
                                     </span>
                                 )}
                             </div>
@@ -437,15 +397,35 @@ export default function PayrollPage() {
                       </TableCell>
 
                       {/* COL 6: TOTAL */}
-                      <TableCell className="text-right pr-6 py-3">
+                      <TableCell className="text-right py-3">
                         <span className="text-sm font-bold text-slate-900">
                             {formatMoney(item.total_payout)}
                         </span>
                       </TableCell>
+
+                      {/* COL 7: ACCIONES DE RECIBO */}
+                      <TableCell className="text-center py-3 pr-6">
+                        <div className="flex justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <Button 
+                                variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50"
+                                onClick={(e) => { e.stopPropagation(); handlePreview(item); }}
+                                title="Ver Recibo"
+                            >
+                                <Eye size={14} />
+                            </Button>
+                            <Button 
+                                variant="ghost" size="icon" className="h-7 w-7 text-slate-600 hover:bg-slate-100"
+                                onClick={(e) => { e.stopPropagation(); handleDownload(item); }}
+                                title="Descargar PDF"
+                            >
+                                <Download size={14} />
+                            </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
 
-                  {/* --- FILA DE TOTALES --- */}
+                  {/* FILA DE TOTALES */}
                   <TableRow className="bg-slate-900 hover:bg-slate-900 border-t-2 border-slate-800">
                       <TableCell colSpan={2} className="pl-6 py-3 font-bold text-white text-xs uppercase tracking-wider text-right pr-4">
                           Totales Generales:
@@ -459,9 +439,10 @@ export default function PayrollPage() {
                       <TableCell className="text-right py-3 font-mono font-bold text-sm text-green-300">
                           {formatMoney(totalCommission)}
                       </TableCell>
-                      <TableCell className="text-right pr-6 py-3 font-mono font-bold text-base text-white">
+                      <TableCell className="text-right py-3 font-mono font-bold text-base text-white">
                           {formatMoney(totalNet)}
                       </TableCell>
+                      <TableCell></TableCell>
                   </TableRow>
 
                 </TableBody>

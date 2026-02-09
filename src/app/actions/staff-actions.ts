@@ -3,7 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 
-// --- 1. GESTIÓN FINANCIERA (Nómina y Contratos) ---
+// --- 1. GESTIÓN FINANCIERA (Configuración de empleado) ---
 
 export async function updateEmployeeFinancials(employeeId: string, data: any) {
   const supabase = await createClient();
@@ -167,8 +167,6 @@ export async function registerDocument(employeeId: string, name: string, url: st
 
 export async function deleteDocument(docId: string) {
     const supabase = await createClient();
-    // Nota: Aquí solo borramos la referencia en la BD. 
-    // Para borrar el archivo físico de Storage se requiere un paso adicional en el cliente o una función backend más compleja.
     const { error } = await supabase.from('employee_documents').delete().eq('id', docId);
     
     if (error) throw new Error("Error borrando documento: " + error.message);

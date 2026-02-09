@@ -19,7 +19,7 @@ function getMonterreyDateString(utcTimestamp: string) {
 export async function getPayrollPreview(startDate: string, endDate: string) {
   const supabase = await createClient();
 
-  // 1. VENTAS
+  // 1. OBTENER VENTAS
   const queryStart = subDays(parseISO(startDate), 1).toISOString();
   const queryEnd = addDays(parseISO(endDate), 2).toISOString(); 
 
@@ -67,6 +67,7 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
 
   // 2. POOLS
   const { data: tiers } = await supabase.from('commission_tiers').select('*');
+  
   const groomingTierFound = tiers?.find((t: any) => 
       t.type === 'grooming' && totalGrooming >= safeNum(t.min_sales) && totalGrooming <= (t.max_sales ? safeNum(t.max_sales) : Infinity)
   );
@@ -79,23 +80,42 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
   const totalTier = { name: totalTierFound?.name || 'Sin Nivel', percentage: safeNum(totalTierFound?.percentage) };
   const totalPoolTotal = totalRevenue * totalTier.percentage;
 
-  // 3. CÁLCULO EMPLEADOS
+  // 3. EMPLEADOS
   const { data: employees } = await supabase.from('employees').select(`
       id, first_name, last_name, role, color, commission_type, participation_pct,
-      contracts:employee_contracts (base_salary_weekly, is_active, metadata), 
-      absences:employee_absences (type, start_date, end_date)
+      contracts:employee_contracts!fk_staff_contracts (id, base_salary_weekly, is_active, metadata), 
+      absences:employee_absences!fk_staff_absences (id, type, start_date, end_date)
   `).eq('active', true);
 
+  if (!employees || employees.length === 0) {
+    return {
+      period: { start: startDate, end: endDate },
+      financials: { totalGrooming, totalStore, totalRevenue },
+      dailyBreakdown,
+      tiers_applied: { grooming: groomingTier, total: totalTier },
+      pools: { grooming: groomingPoolTotal, total: totalPoolTotal, redistributed: 0 },
+      cash_flow: { total_cash_needed: 0 }, 
+      details: []
+    };
+  }
+
+  // 4. CÁLCULO DE NÓMINA
   let redistributionPot = 0; 
   let beneficiariesCount = 0; 
   let totalCashNeeded = 0;
 
-  const initialCalculations = employees?.map((emp: any) => {
-    const contract = emp.contracts?.find((c: any) => c.is_active) || emp.contracts?.[0];
-    const totalWeeklySalary = safeNum(contract?.base_salary_weekly);
+  const initialCalculations = employees.map((emp: any) => {
+    // Contrato
+    const contractsArray = Array.isArray(emp.contracts) ? emp.contracts : [];
+    const contract = contractsArray.find((c: any) => c.is_active) || contractsArray[0] || null;
+    const totalWeeklySalary = contract ? safeNum(contract.base_salary_weekly) : 0;
     const meta = contract?.metadata || {};
-    const bankTarget = safeNum(meta.bank_dispersion) || totalWeeklySalary; 
+    
+    // Sueldos Base COMPLETOS (Semanal)
+    const bankTarget = safeNum(meta.bank_dispersion) || 0; 
     const cashTarget = safeNum(meta.cash_difference) || 0;
+    const fullBankWeekly = (bankTarget === 0 && cashTarget === 0) ? totalWeeklySalary : bankTarget;
+    const fullCashWeekly = cashTarget;
 
     // Faltas
     const empAbsences = Array.isArray(emp.absences) ? emp.absences : [];
@@ -103,14 +123,23 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
         abs.start_date <= endDate && abs.end_date >= startDate && abs.type === 'unjustified'
     ));
     const unjustifiedDays = absences.length;
-    const daysPaid = Math.max(0, 7 - unjustifiedDays);
     
-    // Desglose proporcional de sueldo
-    const payoutBank = (bankTarget / 7) * daysPaid;
-    const payoutCashBase = (cashTarget / 7) * daysPaid;
+    // CÁLCULO DE DESCUENTO POR SUELDO BASE (DIVIDIDO ENTRE 7)
+    // Descuento Diario = (Sueldo Banco + Sueldo Efec) / 7
+    const dailyBank = fullBankWeekly / 7;
+    const dailyCash = fullCashWeekly / 7;
+    
+    // Descuento Total = Diario * Días Faltados
+    const salaryPenaltyBank = dailyBank * unjustifiedDays;
+    const salaryPenaltyCash = dailyCash * unjustifiedDays;
+    const salaryPenaltyTotal = salaryPenaltyBank + salaryPenaltyCash;
+    
+    // Sueldo Neto a Pagar (Base)
+    const payoutBank = Math.max(0, fullBankWeekly - salaryPenaltyBank);
+    const payoutCashBase = Math.max(0, fullCashWeekly - salaryPenaltyCash);
     const payoutBaseTotal = payoutBank + payoutCashBase;
     
-    // Comisiones
+    // CÁLCULO DE COMISIONES
     const participation = safeNum(emp.participation_pct) / 100;
     let theoreticalCommission = 0;
     let poolName = "";
@@ -123,6 +152,7 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
         poolName = "Total";
     }
 
+    // PENALIZACIÓN DE COMISIÓN (Bote Redistribuible)
     let commissionPenalty = 0;
     if (unjustifiedDays > 0 && theoreticalCommission > 0) {
         const penaltyFactor = Math.min(1, unjustifiedDays / 6); 
@@ -134,21 +164,35 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
     if (isBeneficiary) beneficiariesCount++;
 
     return {
-        ...emp,
+        id: emp.id,
+        first_name: emp.first_name,
+        last_name: emp.last_name,
+        role: emp.role,
+        color: emp.color,
+        commission_type: emp.commission_type,
+        participation_pct: safeNum(emp.participation_pct),
         unjustifiedDays,
+        
+        // Datos crudos para recibo
+        fullBankWeekly,
+        fullCashWeekly,
+        salaryPenaltyTotal, // Descuento en $ del sueldo base
+        
         payoutBaseTotal,
         payoutBank,       
         payoutCashBase,   
         poolName,
         theoreticalCommission,
-        commissionPenalty,
+        commissionPenalty, // Descuento en $ de la comisión
         payoutCommissionInitial: theoreticalCommission - commissionPenalty,
         isBeneficiary
     };
-  }) || [];
+  });
 
+  // Bono redistribuido
   const bonusPerPerson = beneficiariesCount > 0 ? (redistributionPot / beneficiariesCount) : 0;
 
+  // Generar detalles finales
   const payrollDetails = initialCalculations.map((emp) => {
     const bonus = emp.isBeneficiary ? bonusPerPerson : 0;
     const finalCommission = emp.payoutCommissionInitial + bonus;
@@ -157,58 +201,76 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
     totalCashNeeded += totalCashPayout;
 
     let notes = [];
-    if (emp.unjustifiedDays > 0) notes.push(`-${emp.unjustifiedDays} faltas`);
+    if (emp.unjustifiedDays > 0) notes.push(`-${emp.unjustifiedDays} falta(s)`);
     else if (bonus > 0) notes.push(`+Bono $${Math.round(bonus)}`);
     
-    const baseNote = `${safeNum(emp.participation_pct)}% ${emp.poolName}`;
+    const baseNote = `${emp.participation_pct}% ${emp.poolName}`;
     const fullNote = notes.length > 0 ? `${baseNote} (${notes.join(', ')})` : baseNote;
 
     return {
-      employee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, role: emp.role, color: emp.color },
-      days_worked: 6 - emp.unjustifiedDays, 
+      employee: { 
+        id: emp.id, 
+        name: `${emp.first_name} ${emp.last_name}`, 
+        role: emp.role, 
+        color: emp.color 
+      },
+      days_worked: 7 - emp.unjustifiedDays,
       lost_days: emp.unjustifiedDays,
-      commission_type: emp.commission_type,
-      participation_pct: safeNum(emp.participation_pct),
+      commission_type: emp.commission_type || 'none',
+      participation_pct: emp.participation_pct,
       calculation_note: fullNote,
       
-      // DATOS FINANCIEROS EXPORTADOS PARA UI
-      payout_bank: emp.payoutBank,             // Columna 1
-      payout_cash_salary: emp.payoutCashBase,  // Columna 2 (Nuevo)
-      payout_commission: finalCommission,      // Columna 3
-      payout_cash_total: totalCashPayout,      // Suma Col 2+3 (Para el total efectivo)
+      // MONTOS COMPLETOS (Para recibo "Bruto")
+      full_salary_weekly: emp.fullBankWeekly + emp.fullCashWeekly,
+      salary_penalty: emp.salaryPenaltyTotal, // Deducción Salario Base
       
-      total_payout: emp.payoutBaseTotal + finalCommission, // Total Neto
+      // MONTOS NETOS A PAGAR
+      payout_bank: Math.round(emp.payoutBank * 100) / 100,
+      payout_cash_salary: Math.round(emp.payoutCashBase * 100) / 100,
+      payout_commission: Math.round(finalCommission * 100) / 100,
+      payout_cash_total: Math.round(totalCashPayout * 100) / 100,
       
-      // Detalles extra
-      commission_bonus: bonus,
-      commission_penalty: emp.commissionPenalty,
+      total_payout: Math.round((emp.payoutBaseTotal + finalCommission) * 100) / 100,
+      
+      // Extras
+      commission_bonus: Math.round(bonus * 100) / 100,
+      commission_penalty: Math.round(emp.commissionPenalty * 100) / 100, // Deducción Comisión
     };
   });
 
   return {
     period: { start: startDate, end: endDate },
-    financials: { totalGrooming, totalStore, totalRevenue },
+    financials: { 
+      totalGrooming: Math.round(totalGrooming * 100) / 100, 
+      totalStore: Math.round(totalStore * 100) / 100, 
+      totalRevenue: Math.round(totalRevenue * 100) / 100 
+    },
     dailyBreakdown,
     tiers_applied: { grooming: groomingTier, total: totalTier },
-    pools: { grooming: groomingPoolTotal, total: totalPoolTotal, redistributed: redistributionPot },
-    cash_flow: { total_cash_needed: totalCashNeeded }, 
+    pools: { 
+      grooming: Math.round(groomingPoolTotal * 100) / 100, 
+      total: Math.round(totalPoolTotal * 100) / 100, 
+      redistributed: Math.round(redistributionPot * 100) / 100 
+    },
+    cash_flow: { total_cash_needed: Math.round(totalCashNeeded * 100) / 100 }, 
     details: payrollDetails
   };
 }
 
 export async function savePayrollRun(data: any) {
     const supabase = await createClient();
+    
     const { data: runData, error: runError } = await supabase.from('payroll_runs').insert({
         start_date: data.period.start,
         end_date: data.period.end,
         total_grooming_sales: data.financials.totalGrooming,
         total_store_sales: data.financials.totalStore,
-        applied_tier_percentage: 0, 
+        applied_tier_percentage: data.tiers_applied.grooming.percentage, 
         metadata: { tiers: data.tiers_applied, pools: data.pools, cash_flow: data.cash_flow }, 
         status: 'paid'
     }).select().single();
 
-    if (runError) throw new Error("Error: " + runError.message);
+    if (runError) throw new Error("Error al guardar nómina: " + runError.message);
 
     const receipts = data.details.map((d: any) => ({
         payroll_run_id: runData.id, 
@@ -222,14 +284,20 @@ export async function savePayrollRun(data: any) {
         metadata: { 
             bank_deposit: d.payout_bank, 
             cash_payment: d.payout_cash_total,
+            // Guardamos todo el detalle para regenerar el PDF
             breakdown: {
+                full_salary_weekly: d.full_salary_weekly,
+                salary_penalty: d.salary_penalty,
                 cash_salary: d.payout_cash_salary,
-                cash_commission: d.payout_commission
+                cash_commission: d.payout_commission,
+                bonus: d.commission_bonus,
+                penalty: d.commission_penalty
             }
         }
     }));
     
     const { error: receiptsError } = await supabase.from('payroll_receipts').insert(receipts);
-    if (receiptsError) throw new Error("Error: " + receiptsError.message);
+    if (receiptsError) throw new Error("Error al guardar recibos: " + receiptsError.message);
+    
     return { success: true, id: runData.id };
 }

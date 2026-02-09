@@ -1,38 +1,48 @@
-'use client'; // Convertimos a Client Component para manejar el estado del modal "Nuevo"
+'use client'; 
 
 import { useState, useEffect } from 'react';
 import StaffGrid from '@/components/staff/StaffGrid'; 
-import AddStaffDialog from '@/components/staff/AddStaffDialog'; // Importar
+import AddStaffDialog from '@/components/staff/AddStaffDialog'; 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { DollarSign, Users, PlusCircle, Loader2 } from 'lucide-react';
-import { createClient } from '@/utils/supabase/client'; // Cliente para fetch en useEffect
+import { DollarSign, Users, PlusCircle, Loader2, AlertTriangle } from 'lucide-react';
+import { createClient } from '@/utils/supabase/client'; 
 
 export default function StaffPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAddOpen, setIsAddOpen] = useState(false); // Estado modal nuevo
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isAddOpen, setIsAddOpen] = useState(false); 
 
-  // Fetch data on client side to keep it simple with the modals revalidation
   const fetchEmployees = async () => {
+    setLoading(true);
+    setErrorMsg(null);
+    
     const supabase = createClient();
-    const { data } = await supabase.from('employees')
+    
+    // ⚠️ AQUÍ ESTÁ LA CORRECCIÓN: Usamos !fk_staff_...
+    const { data, error } = await supabase.from('employees')
       .select(`
         *,
-        contracts:employee_contracts(id, base_salary_weekly, is_active, metadata),
-        absences:employee_absences(*),
-        documents:employee_documents(*)
+        contracts:employee_contracts!fk_staff_contracts(id, base_salary_weekly, is_active, metadata),
+        absences:employee_absences!fk_staff_absences(*),
+        documents:employee_documents!fk_staff_documents(*)
       `)
       .order('active', { ascending: false })
       .order('first_name', { ascending: true });
       
-    if(data) setEmployees(data);
+    if (error) {
+        console.error("Error cargando staff:", error);
+        setErrorMsg(error.message); 
+    } else {
+        setEmployees(data || []);
+    }
+    
     setLoading(false);
   };
 
   useEffect(() => { fetchEmployees(); }, []);
 
-  // Recargar al cerrar modales si es necesario
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
@@ -61,6 +71,16 @@ export default function StaffPage() {
         </div>
       </div>
       
+      {errorMsg && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5" />
+            <div>
+                <p className="font-bold">Error cargando datos</p>
+                <p className="text-sm">{errorMsg}</p>
+            </div>
+        </div>
+      )}
+
       {loading ? (
          <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-slate-300"/></div>
       ) : (
