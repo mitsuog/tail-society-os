@@ -20,6 +20,7 @@ export default function StaffPage() {
     
     const supabase = createClient();
     
+    // Consulta optimizada con !fk explícitos para evitar ambigüedades
     const { data, error } = await supabase.from('employees')
       .select(`
         *,
@@ -45,51 +46,60 @@ export default function StaffPage() {
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
-    // FIX: Contenedor con scroll vertical habilitado
-    <div className="h-full w-full overflow-y-auto bg-slate-50/30">
-        <div className="p-6 space-y-6 w-full max-w-[1600px] mx-auto animate-in fade-in duration-500 pb-24">
+    // ESTRUCTURA DE SCROLL CORREGIDA:
+    // 1. El padre fuerza el tamaño completo y oculta desbordes
+    <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 gap-4">
-            <div>
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                <Users className="text-slate-600" /> Equipo de Trabajo
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-                Administración de perfiles, contratos y expediente digital.
-            </p>
-            </div>
-
-            <div className="flex gap-2">
-                <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white">
-                    <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Empleado
-                </Button>
+        {/* 2. El hijo ocupa el espacio restante (flex-1) y maneja el scroll vertical (overflow-y-auto) */}
+        <div className="flex-1 overflow-y-auto w-full">
+            
+            <div className="p-4 md:p-6 space-y-6 w-full max-w-[1600px] mx-auto animate-in fade-in duration-500 pb-24">
                 
-                <Link href="/admin/payroll">
-                <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50">
-                    <DollarSign className="mr-2 h-4 w-4" /> Ir a Nómina
-                </Button>
-                </Link>
-            </div>
-        </div>
-        
-        {errorMsg && (
-            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5" />
-                <div>
-                    <p className="font-bold">Error cargando datos</p>
-                    <p className="text-sm">{errorMsg}</p>
+                {/* Header */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-5 gap-4">
+                    <div>
+                        <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                            <Users className="text-slate-600 h-6 w-6" /> Equipo de Trabajo
+                        </h1>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Administración de perfiles, contratos y expediente digital.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Nuevo
+                        </Button>
+                        
+                        <Link href="/admin/payroll" className="flex-1 md:flex-none">
+                            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50 w-full">
+                                <DollarSign className="mr-2 h-4 w-4" /> Nómina
+                            </Button>
+                        </Link>
+                    </div>
                 </div>
+                
+                {/* Mensaje de Error */}
+                {errorMsg && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-center gap-3">
+                        <AlertTriangle className="h-5 w-5" />
+                        <div>
+                            <p className="font-bold">Error cargando datos</p>
+                            <p className="text-sm">{errorMsg}</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Grid de Empleados */}
+                {loading ? (
+                    <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-slate-300"/></div>
+                ) : (
+                    <StaffGrid initialEmployees={employees} />
+                )}
+
+                {/* MODAL CREAR */}
+                <AddStaffDialog isOpen={isAddOpen} onClose={() => { setIsAddOpen(false); handleRefresh(); }} />
             </div>
-        )}
-
-        {loading ? (
-            <div className="flex justify-center py-20"><Loader2 className="animate-spin h-8 w-8 text-slate-300"/></div>
-        ) : (
-            <StaffGrid initialEmployees={employees} />
-        )}
-
-        {/* MODAL CREAR */}
-        <AddStaffDialog isOpen={isAddOpen} onClose={() => { setIsAddOpen(false); handleRefresh(); }} />
         </div>
     </div>
   );
