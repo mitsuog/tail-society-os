@@ -173,9 +173,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // --- 1. ESTADO LOCAL (Optimistic UI) ---
   const [dateState, setDateState] = useState(currentDate);
   const [viewState, setViewState] = useState(view);
+  const [isLoadingData, setIsLoadingData] = useState(false); // Estado de carga para evitar parpadeos
 
   useEffect(() => { 
       if (!isSameDay(currentDate, dateState)) setDateState(currentDate);
@@ -205,20 +205,15 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const [absences, setAbsences] = useState<any[]>([]); 
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   
-  // Dragging states
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [touchDragStart, setTouchDragStart] = useState<{ x: number; y: number; time: number } | null>(null);
   const [isDragStarted, setIsDragStarted] = useState(false);
   const dragDistanceRef = useRef(0);
   const MIN_DRAG_DISTANCE = 5; 
   const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
-  
-  // Resizing states
   const [resizing, setResizing] = useState<ResizingState | null>(null);
   const [hoveredResizeId, setHoveredResizeId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0); 
-  
-  // UI states
   const [selectedAppt, setSelectedAppt] = useState<any | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [tooltipData, setTooltipData] = useState<any | null>(null);
@@ -255,6 +250,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   // Data Fetching
   useEffect(() => {
     const fetchData = async () => {
+      setIsLoadingData(true);
       let startRange, endRange;
       if (viewState === 'month') {
           const monthStart = startOfMonth(dateState);
@@ -265,9 +261,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           startRange = startOfDay(dateState);
           endRange = endOfDay(viewState === '3day' ? addDays(dateState, 2) : viewState === 'week' ? addDays(dateState, 6) : dateState);
       }
+      
       const { data: apptData } = await supabase.from('appointment_services')
         .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
         .gte('start_time', startRange.toISOString()).lte('end_time', endRange.toISOString());
+      
       if (apptData) setLocalAppts(apptData);
 
       const { data: schedData } = await supabase.from('employee_schedules').select('*');
@@ -278,11 +276,13 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
       const { data: holData } = await supabase.from('official_holidays').select('*');
       if (holData) setHolidays(holData);
+      
+      setIsLoadingData(false);
     };
     fetchData();
   }, [dateState, viewState, refreshKey, supabase]);
 
-  // Funciones de apertura de modales manuales (sin dependencias de estado drag)
+  // Funciones de apertura de modales
   const openDetailDialog = (appt: any) => {
       setTooltipData(null);
       setSelectedAppt(appt);
@@ -290,10 +290,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       setContextMenu(null);
   };
 
-  // --- LOGICA UNIFICADA DE EVENTOS (MOUSE + TOUCH GLOBAL) ---
+  // --- LOGICA EVENTOS (MOUSE + TOUCH) ---
   useEffect(() => {
       const handleGlobalMove = (clientX: number, clientY: number) => {
-          // Lógica de RESIZE
           if (resizing) {
               const deltaPixels = clientY - resizing.initialY;
               const deltaMinutes = Math.round(deltaPixels / PIXELS_PER_MINUTE);
@@ -302,7 +301,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
               return;
           }
 
-          // Lógica de DRAG (Táctil principalmente)
           if (isDragging && touchDragStart) {
               const distance = Math.sqrt(Math.pow(clientX - touchDragStart.x, 2) + Math.pow(clientY - touchDragStart.y, 2));
               if (distance > MIN_DRAG_DISTANCE && !isDragStarted) { 
@@ -336,7 +334,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                               height: duration * PIXELS_PER_MINUTE, 
                               petName: appt.appointment?.pet?.name 
                           };
-                          
                           setDragGhost(newGhost);
                           ghostRef.current = newGhost;
                       }
@@ -346,7 +343,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       };
 
       const handleGlobalEnd = async (e?: TouchEvent | MouseEvent) => {
-          // Fin RESIZE
           if (resizing) {
               const appt = localAppts.find(a => a.id === resizing.apptId);
               if (appt && resizing.newDuration !== resizing.originalDuration) {
@@ -365,16 +361,13 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
               setHoveredResizeId(null);
           }
 
-          // Fin DRAG Táctil
           if (isDragging && touchDragStart) {
               const final = ghostRef.current;
               
               if (final && isDragStarted) {
-                  // Fue un arrastre real
                   setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: viewState === 'day' ? final.colId : a.employee_id } : a));
                   updateAppointment(final.apptId, final.startTime, final.endTime, viewState === 'day' ? final.colId : undefined);
               } else if (isDragging && !isDragStarted) {
-                  // Fue un tap simple (click) en móvil
                   const appt = localAppts.find(a => a.id === isDragging);
                   if(e && e.cancelable) e.preventDefault(); 
                   if (appt) openDetailDialog(appt);
@@ -388,19 +381,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           }
       };
 
-      // Listeners MOUSE
-      const onMouseMove = (e: MouseEvent) => {
-          if(resizing) { e.preventDefault(); handleGlobalMove(e.clientX, e.clientY); }
-      };
+      const onMouseMove = (e: MouseEvent) => { if(resizing) { e.preventDefault(); handleGlobalMove(e.clientX, e.clientY); } };
       const onMouseUp = (e: MouseEvent) => handleGlobalEnd(e);
-
-      // Listeners TOUCH (Móvil)
-      const onTouchMove = (e: TouchEvent) => {
-          if (resizing || isDragging) {
-              if (e.cancelable) e.preventDefault(); 
-              handleGlobalMove(e.touches[0].clientX, e.touches[0].clientY);
-          }
-      };
+      const onTouchMove = (e: TouchEvent) => { if (resizing || isDragging) { if (e.cancelable) e.preventDefault(); handleGlobalMove(e.touches[0].clientX, e.touches[0].clientY); } };
       const onTouchEnd = (e: TouchEvent) => handleGlobalEnd(e);
 
       if (resizing || isDragging) {
@@ -427,24 +410,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       const start = parseISO(appt.start_time);
       const end = parseISO(appt.end_time);
-      
-      setResizing({ 
-          apptId: appt.id, 
-          initialY: clientY, 
-          originalDuration: differenceInMinutes(end, start), 
-          newDuration: differenceInMinutes(end, start), 
-          startYTime: 0 
-      });
-      setTooltipData(null); 
-      setIsDragging(null);
-      setContextMenu(null);
+      setResizing({ apptId: appt.id, initialY: clientY, originalDuration: differenceInMinutes(end, start), newDuration: differenceInMinutes(end, start), startYTime: 0 });
+      setTooltipData(null); setIsDragging(null); setContextMenu(null);
   };
 
-  const handleApptClick = (appt: any) => { 
-      if (!isDragging && !resizing) { 
-          openDetailDialog(appt);
-      }
-  };
+  const handleApptClick = (appt: any) => { if (!isDragging && !resizing) openDetailDialog(appt); };
 
   const handleMouseEnter = (e: React.MouseEvent, appt: any) => { 
       if (!isDragging && !resizing && !contextMenu) { 
@@ -480,40 +450,18 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const snappedMinutes = Math.round(Math.max(0, clickY / PIXELS_PER_MINUTE) / SNAP_MINUTES) * SNAP_MINUTES;
       const baseDate = col.type === 'date' ? col.data : dateState;
       const startTime = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
-
-      setContextMenu({
-          visible: true,
-          x: e.clientX,
-          y: e.clientY,
-          date: baseDate,
-          startTime: startTime,
-          employeeId: col.type === 'employee' ? col.id : undefined,
-          colId: col.id
-      });
+      setContextMenu({ visible: true, x: e.clientX, y: e.clientY, date: baseDate, startTime: startTime, employeeId: col.type === 'employee' ? col.id : undefined, colId: col.id });
   };
 
   const handleDragStart = (e: React.DragEvent | React.TouchEvent, appt: any) => { 
       if (!canEdit) return;
-      
       const target = e.target as HTMLElement;
-      if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
-          return; 
-      }
-
-      setTooltipData(null);
-      setContextMenu(null);
-      dragDistanceRef.current = 0;
-      
+      if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) return; 
+      setTooltipData(null); setContextMenu(null); dragDistanceRef.current = 0;
       if ('dataTransfer' in e) { 
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData("apptId", appt.id);
-          try {
-              const dragImg = document.createElement('div');
-              dragImg.style.position = 'absolute'; dragImg.style.top = '-1000px';
-              document.body.appendChild(dragImg);
-              e.dataTransfer.setDragImage(dragImg, 0, 0);
-              setTimeout(() => { if(document.body.contains(dragImg)) document.body.removeChild(dragImg); }, 50);
-          } catch(err) {}
+          try { const dragImg = document.createElement('div'); dragImg.style.position = 'absolute'; dragImg.style.top = '-1000px'; document.body.appendChild(dragImg); e.dataTransfer.setDragImage(dragImg, 0, 0); setTimeout(() => { if(document.body.contains(dragImg)) document.body.removeChild(dragImg); }, 50); } catch(err) {}
           setTimeout(() => setIsDragging(appt.id), 0);
       } else if ('touches' in e) { 
           const touch = e.touches[0];
@@ -533,9 +481,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     const newStart = addMinutes(setHours(startOfDay(baseDate), START_HOUR), snappedMinutes);
     const duration = differenceInMinutes(parseISO(appt.end_time), parseISO(appt.start_time));
     const newGhost = { apptId: appt.id, colId: col.id, colIndex, startTime: newStart, endTime: addMinutes(newStart, duration), duration, top: snappedMinutes * PIXELS_PER_MINUTE, height: duration * PIXELS_PER_MINUTE, petName: appt.appointment?.pet?.name };
-    if (!ghostRef.current || ghostRef.current.colId !== newGhost.colId || Math.abs(ghostRef.current.top - newGhost.top) > 1) { 
-        ghostRef.current = newGhost; setDragGhost(newGhost); 
-    }
+    if (!ghostRef.current || ghostRef.current.colId !== newGhost.colId || Math.abs(ghostRef.current.top - newGhost.top) > 1) { ghostRef.current = newGhost; setDragGhost(newGhost); }
   };
   
   const handleDrop = (e: React.DragEvent) => { 
@@ -549,6 +495,10 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   };
 
   const getAppointmentsForColumn = useCallback((col: ColumnData) => {
+    // Si estamos cargando datos nuevos (cambio de fecha), evitamos renderizar citas que no corresponden
+    // para evitar el efecto de "parpadeo" de citas de la fecha anterior.
+    if (isLoadingData) return [];
+
     const colAppts = localAppts.filter(appt => {
       const apptStart = parseISO(appt.start_time);
       if (viewState === 'day') return appt.employee_id === col.id && isSameDay(apptStart, dateState);
@@ -559,9 +509,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const end = parseISO(appt.end_time);
       const top = Math.max(0, ((start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60)) * PIXELS_PER_MINUTE);
       let height = Math.max(20, differenceInMinutes(end, start) * PIXELS_PER_MINUTE);
-      if (resizing && resizing.apptId === appt.id) {
-          height = Math.max(20, resizing.newDuration * PIXELS_PER_MINUTE);
-      }
+      if (resizing && resizing.apptId === appt.id) height = Math.max(20, resizing.newDuration * PIXELS_PER_MINUTE);
       return { ...appt, _start: start.getTime(), _end: end.getTime(), top, height };
     });
     const lanes: any[][] = [];
@@ -572,7 +520,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
         if(!placed) { lanes.push([item]); item.laneIndex = lanes.length-1; }
     });
     return items.map(item => ({ ...item, widthPct: 100/lanes.length, leftPct: (100/lanes.length) * item.laneIndex }));
-  }, [localAppts, viewState, dateState, resizing, PIXELS_PER_MINUTE]);
+  }, [localAppts, viewState, dateState, resizing, PIXELS_PER_MINUTE, isLoadingData]);
 
   const timeSlots = useMemo(() => {
     const slots = [];
@@ -582,7 +530,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     return slots;
   }, [dateState, START_HOUR, END_HOUR]);
 
-  // --- CALCULO UNIFICADO DE DATOS ---
   const calculateColumnData = useCallback((col: ColumnData) => {
       let colAppointments = [];
       let capacityMinutes = 0;
@@ -857,7 +804,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                     </div>
 
                     <div className="flex flex-1 relative bg-white h-fit min-h-full" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
-                        {/* Z-40 para que tape las citas (z-35) al hacer scroll lateral */}
                         <div className="sticky left-0 z-40 w-14 bg-white border-r border-slate-200 h-fit min-h-full shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             {timeSlots.map((slot, i) => (<div key={i} style={{ height: `${30 * PIXELS_PER_MINUTE}px` }} className="flex justify-center pt-1.5 border-b border-slate-50 bg-white"><span className="text-[10px] font-semibold text-slate-400">{format(slot, 'HH:mm')}</span></div>))}
                         </div>
@@ -909,7 +855,8 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                         onMouseLeave={handleMouseLeave}
                                         onTouchStart={(e) => { if (!absenceOverlay && !resizing && canEdit) { const target = e.target as HTMLElement; if (!target.closest('.resize-handle')) handleDragStart(e, appt); } }}
                                         
-                                        // IMPORTANTE: Z-Index 35 para flotar sobre "Ausente" (z-30), pero debajo de la hora (z-40)
+                                        // IMPORTANTE: Z-Index 35 (Debajo de hora 40 y encima de ausencia 30)
+                                        // FIX PARPADEO: transform: translateZ(0) fuerza capa de hardware
                                         className={cn(
                                             "absolute rounded-lg shadow-sm border overflow-hidden transition-all duration-200 ring-1 ring-white flex flex-col p-1.5 group/appt", 
                                             styles.container, 
@@ -928,7 +875,8 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                             borderColor: isFamily ? stringToColor(appt.appointment?.client?.full_name||'') : undefined,
                                             touchAction: 'none', 
                                             WebkitUserSelect: 'none',
-                                            userSelect: 'none'
+                                            userSelect: 'none',
+                                            transform: 'translateZ(0)' // HACK: Aceleración de hardware
                                         }}>
                                         <div className={cn("absolute left-0 top-0 bottom-0 w-1", styles.accentBar)}></div>
                                         <div className="pl-2 w-full overflow-hidden flex flex-col h-full pointer-events-none select-none">
