@@ -696,7 +696,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
   return (
     <>
-      <div className="flex flex-col h-[calc(100dvh-8rem)] md:h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
+      <div className="flex flex-col w-full h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
         <div className="flex flex-col lg:flex-row items-center justify-between px-4 py-3 bg-white border-b border-slate-200 gap-4 shrink-0">
             <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={() => handleDateStep('prev')}><ChevronLeft size={16} /></Button>
