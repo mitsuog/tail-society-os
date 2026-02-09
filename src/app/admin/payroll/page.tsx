@@ -12,14 +12,14 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { 
     CalendarIcon, Loader2, RefreshCw, Save, Scissors, Store, Calculator,
-    ArrowUpCircle, Coins, ChevronLeft, ChevronRight, Download, Eye
+    ArrowUpCircle, Coins, ChevronLeft, ChevronRight, Download, Eye, AlertTriangle
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { getPayrollPreview, savePayrollRun } from '@/app/actions/payroll-actions';
 import { toast } from "sonner";
 import { downloadSingleReceipt, previewReceipt } from "@/utils/payroll-receipt-generator";
 
-// Interfaces (Sin cambios)
+// --- Interfaces ---
 interface PayrollDetail {
     employee: { id: string; name: string; role: string; color: string };
     days_worked: number;
@@ -58,37 +58,59 @@ interface PayrollData {
 }
 
 export default function PayrollPage() {
-  const [date, setDate] = useState<{ from: Date; to: Date }>(() => {
+  // Estado inicial: Semana actual
+  const [date, setDate] = useState<{ from: Date; to: Date } | undefined>(() => {
     const now = new Date();
-    const start = startOfWeek(now, { weekStartsOn: 1 });
-    const end = endOfWeek(now, { weekStartsOn: 1 });
-    return { from: start, to: end };
+    return { 
+        from: startOfWeek(now, { weekStartsOn: 1 }), 
+        to: endOfWeek(now, { weekStartsOn: 1 }) 
+    };
   });
 
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [data, setData] = useState<PayrollData | null>(null);
 
-  const syncAndLoadData = async (currentDate: { from: Date; to: Date }) => {
-    if (!currentDate.from || !currentDate.to) return;
+  // --- LÓGICA DE SINCRONIZACIÓN Y CARGA ---
+  const syncAndLoadData = async (currentDate: { from: Date; to: Date } | undefined) => {
+    if (!currentDate?.from || !currentDate?.to) return;
     
     setLoading(true);
     try {
       const startStr = format(currentDate.from, 'yyyy-MM-dd');
       const endStr = format(currentDate.to, 'yyyy-MM-dd');
 
-      setLoadingMessage('Sincronizando ventas...');
-      const syncRes = await fetch(`/api/integrations/zettle?startDate=${startStr}&endDate=${endStr}`);
-      const syncJson = await syncRes.json();
+      // 1. SINCRONIZAR ZETTLE
+      setLoadingMessage('Sincronizando ventas con Zettle...');
       
-      if (!syncJson.success) console.warn("Advertencia de Sync:", syncJson.message);
+      try {
+          const syncRes = await fetch(`/api/integrations/zettle?startDate=${startStr}&endDate=${endStr}`, {
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' }
+          });
 
-      setLoadingMessage('Calculando nómina...');
+          if (!syncRes.ok) {
+              console.error("Zettle API Error:", syncRes.status, await syncRes.text());
+              toast.warning("Error conectando con Zettle. Se usarán datos locales.");
+          } else {
+              const syncJson = await syncRes.json();
+              if (!syncJson.success) {
+                  console.warn("Zettle Sync Warning:", syncJson.message);
+                  toast.info(`Nota Zettle: ${syncJson.message}`);
+              }
+          }
+      } catch (networkError) {
+          console.error("Fallo de red Zettle:", networkError);
+          toast.warning("Sin conexión a Zettle. Calculando con datos existentes.");
+      }
+
+      // 2. CALCULAR NÓMINA
+      setLoadingMessage('Calculando comisiones y nómina...');
       const result = await getPayrollPreview(startStr, endStr);
       setData(result);
 
     } catch (error: any) {
-      toast.error(error.message || "Error al cargar datos");
+      toast.error(error.message || "Error crítico al cargar nómina");
     } finally {
       setLoading(false);
       setLoadingMessage('');
@@ -96,17 +118,21 @@ export default function PayrollPage() {
   };
 
   useEffect(() => {
-    if (date.from && date.to) {
+    if (date?.from && date?.to) {
         syncAndLoadData(date);
     }
   }, [date]);
 
   const handlePrevWeek = () => {
-      setDate(prev => ({ from: subWeeks(prev.from, 1), to: subWeeks(prev.to, 1) }));
+      if (date?.from && date?.to) {
+          setDate({ from: subWeeks(date.from, 1), to: subWeeks(date.to, 1) });
+      }
   };
 
   const handleNextWeek = () => {
-      setDate(prev => ({ from: addWeeks(prev.from, 1), to: addWeeks(prev.to, 1) }));
+      if (date?.from && date?.to) {
+          setDate({ from: addWeeks(date.from, 1), to: addWeeks(date.to, 1) });
+      }
   };
 
   const handleSavePayroll = async () => {
@@ -119,20 +145,11 @@ export default function PayrollPage() {
     }
   };
 
-  const handlePreview = (detail: PayrollDetail) => {
-      if(!data) return;
-      previewReceipt(detail, data.period);
-  };
+  const handlePreview = (detail: PayrollDetail) => { if(data) previewReceipt(detail, data.period); };
+  const handleDownload = (detail: PayrollDetail) => { if(data) downloadSingleReceipt(detail, data.period); };
+  const formatMoney = (amount: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount || 0);
 
-  const handleDownload = (detail: PayrollDetail) => {
-      if(!data) return;
-      downloadSingleReceipt(detail, data.period);
-  };
-
-  const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount || 0);
-  };
-
+  // Cálculos de Totales
   const totalBank = data?.details.reduce((acc, item) => acc + (item.payout_bank || 0), 0) || 0;
   const totalCashSalary = data?.details.reduce((acc, item) => acc + (item.payout_cash_salary || 0), 0) || 0;
   const totalCommission = data?.details.reduce((acc, item) => acc + (item.payout_commission || 0), 0) || 0;
@@ -140,14 +157,12 @@ export default function PayrollPage() {
   const totalNet = data?.details.reduce((acc, item) => acc + (item.total_payout || 0), 0) || 0;
 
   return (
-    // FIX 1: Contenedor flex que ocupa toda la altura, con overflow oculto para el padre
-    <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/50">
+    <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        {/* FIX 2: Área scrolleable independiente */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto w-full">
             <div className="max-w-7xl mx-auto p-2 md:p-6 space-y-4 md:space-y-8 pb-24">
             
-            {/* Header Responsivo */}
+            {/* --- HEADER --- */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border shadow-sm">
                 <div>
                     <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">Nómina</h1>
@@ -162,33 +177,37 @@ export default function PayrollPage() {
                         
                         <Popover>
                             <PopoverTrigger asChild>
-                            <Button 
-                                variant="outline" 
-                                className={cn("w-full sm:w-[240px] justify-center text-center font-medium bg-white border-slate-200 shadow-sm text-xs md:text-sm", !date && "text-muted-foreground")}
-                            >
-                                <CalendarIcon className="mr-2 h-3 w-3 md:h-4 md:w-4 text-slate-500" />
-                                {date?.from ? (
-                                    date.to ? 
-                                    `${format(date.from, "dd MMM", { locale: es })} - ${format(date.to, "dd MMM", { locale: es })}` 
-                                    : format(date.from, "dd MMM", { locale: es })
-                                ) : <span>Periodo</span>}
-                            </Button>
+                                <Button 
+                                    variant="outline" 
+                                    className={cn("w-full sm:w-[260px] justify-center text-center font-medium bg-white border-slate-200 shadow-sm text-xs md:text-sm truncate px-2", !date && "text-muted-foreground")}
+                                >
+                                    <CalendarIcon className="mr-2 h-3 w-3 md:h-4 md:w-4 text-slate-500 shrink-0" />
+                                    {date?.from ? (
+                                        date.to ? 
+                                        `${format(date.from, "dd MMM", { locale: es })} - ${format(date.to, "dd MMM", { locale: es })}` 
+                                        : format(date.from, "dd MMM", { locale: es })
+                                    ) : <span>Seleccionar periodo</span>}
+                                </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="center">
-                            <Calendar
-                                initialFocus
-                                mode="range"
-                                defaultMonth={date?.from}
-                                selected={date}
-                                onSelect={(range: any) => {
-                                    if (range?.from) {
-                                        if (!range.to) setDate({ from: range.from, to: range.from });
-                                        else setDate({ from: range.from, to: range.to });
-                                    }
-                                }}
-                                numberOfMonths={1} // Mejor 1 mes en móvil
-                                locale={es}
-                            />
+                            <PopoverContent className="w-auto p-0 z-50" align="start">
+                                {/* FIX: initialFocus eliminado y onSelect tipado manualmente */}
+                                <Calendar
+                                    mode="range"
+                                    defaultMonth={date?.from}
+                                    selected={date}
+                                    onSelect={(range) => {
+                                        if (range?.from) {
+                                            setDate({ 
+                                                from: range.from, 
+                                                to: range.to || range.from 
+                                            });
+                                        }
+                                    }}
+                                    numberOfMonths={1}
+                                    locale={es}
+                                    weekStartsOn={1}
+                                    className="rounded-md border shadow pointer-events-auto"
+                                />
                             </PopoverContent>
                         </Popover>
 
@@ -221,7 +240,7 @@ export default function PayrollPage() {
             {!loading && data && (
                 <div className="animate-in fade-in duration-500 space-y-4 md:space-y-6">
                 
-                {/* KPIs Grid */}
+                {/* KPIs */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                     <Card className="overflow-hidden border-blue-100 shadow-sm">
                         <div className="bg-blue-50/50 p-3 border-b border-blue-100 flex justify-between items-center">
@@ -324,11 +343,11 @@ export default function PayrollPage() {
                     </AccordionItem>
                 </Accordion>
 
-                {/* FIX 3: Tabla Scrollable Horizontalmente para Móvil */}
+                {/* TABLA PRINCIPAL */}
                 <Card className="shadow-sm border-slate-200 overflow-hidden">
                     <CardContent className="p-0">
                     <div className="overflow-x-auto w-full">
-                        <Table className="min-w-[800px]"> {/* Min-width fuerza el scroll horizontal si es necesario */}
+                        <Table className="min-w-[800px]">
                             <TableHeader>
                             <TableRow className="hover:bg-transparent border-slate-100 bg-slate-50/50">
                                 <TableHead className="pl-4 md:pl-6 h-10 w-[200px] text-xs font-bold text-slate-700 sticky left-0 bg-slate-50/95 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]">COLABORADOR</TableHead>
@@ -344,10 +363,8 @@ export default function PayrollPage() {
                             <TableBody>
                             {data.details.map((item) => {
                                 const totalDeduction = (item.salary_penalty || 0) + (item.commission_penalty || 0);
-                                
                                 return (
                                     <TableRow key={item.employee.id} className="group hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                                    {/* Columna Colaborador STICKY para que no se pierda al scrollear */}
                                     <TableCell className="pl-4 md:pl-6 py-3 sticky left-0 bg-white group-hover:bg-slate-50 transition-colors z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]">
                                         <div className="flex items-center gap-3">
                                             <div 

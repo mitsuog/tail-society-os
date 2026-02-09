@@ -45,19 +45,19 @@ export default function StaffPage() {
   const handleRefresh = () => { fetchEmployees(); };
 
   return (
-    // ESTRUCTURA PRINCIPAL (Sin scroll global en el body)
+    // ESTRUCTURA PRINCIPAL
     <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
-        {/* 1. HEADER FIJO (Sticky)
-            CORRECCIÓN: Bajamos z-index a 10. 
-            Esto permite que flote sobre la lista, pero se quede POR DEBAJO del menú hamburger (z-20+).
+        {/* 1. HEADER FIJO 
+            CORRECCIÓN CLAVE: 'z-0' (o sin z-index) para que no tape al menú hamburger (que suele ser z-50).
+            'relative' crea el contexto de apilamiento necesario sin elevarlo sobre el menú global.
         */}
-        <div className="shrink-0 sticky top-0 z-10 w-full border-b border-slate-200 bg-white/90 backdrop-blur-sm supports-[backdrop-filter]:bg-white/60 transition-all">
+        <div className="shrink-0 relative z-0 w-full border-b border-slate-200 bg-white/90 backdrop-blur-sm supports-[backdrop-filter]:bg-white/60">
             <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     
-                    {/* TÍTULO: pl-14 deja espacio para el hamburger en móvil sin taparlo */}
-                    <div className="pl-14 md:pl-0 w-full md:w-auto">
+                    {/* TÍTULO: pl-12 empuja el texto a la derecha en móvil para no chocar con el hamburger */}
+                    <div className="pl-12 md:pl-0 w-full md:w-auto">
                         <h1 className="text-xl md:text-2xl font-bold text-slate-900 flex items-center gap-2">
                             <Users className="text-slate-600 h-6 w-6" /> Equipo de Trabajo
                         </h1>
@@ -66,8 +66,8 @@ export default function StaffPage() {
                         </p>
                     </div>
 
-                    {/* BOTONES: También empujados para alinearse visualmente en móvil */}
-                    <div className="flex gap-2 w-full md:w-auto pl-14 md:pl-0">
+                    {/* BOTONES: También empujados en móvil */}
+                    <div className="flex gap-2 w-full md:w-auto pl-12 md:pl-0">
                         <Button onClick={() => setIsAddOpen(true)} className="bg-slate-900 text-white flex-1 md:flex-none shadow-sm text-xs md:text-sm h-9 md:h-10">
                             <PlusCircle className="mr-2 h-4 w-4" /> Nuevo
                         </Button>
@@ -83,7 +83,7 @@ export default function StaffPage() {
         </div>
 
         {/* 2. ÁREA DE CONTENIDO (Scroll Independiente) */}
-        <div className="flex-1 overflow-y-auto w-full scroll-smooth">
+        <div className="flex-1 overflow-y-auto w-full scroll-smooth relative z-0">
             <div className="px-4 md:px-6 py-6 w-full max-w-[1600px] mx-auto pb-32">
                 
                 {errorMsg && (
