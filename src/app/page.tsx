@@ -5,23 +5,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
   Banknote, CalendarCheck, Users, TrendingUp, 
-  MapPin, Sun, ArrowUpRight, ArrowDownRight,
-  CalendarPlus, Search, ArrowRight
+  MapPin, Sun, ArrowUpRight, ArrowRight,
+  CalendarPlus, Search, Clock, Scissors, Droplets, Sparkles
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
-import { startOfWeek, endOfWeek, subWeeks, format } from 'date-fns';
+import { startOfWeek, endOfWeek, subWeeks, format, parseISO, getHours } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
-// --- TIPOS ---
-interface WeeklyMetric {
-  day: string;
-  value: number;
-  heightPct: number;
+// --- UTILS & TYPES ---
+
+interface AppointmentItem {
+  id: string;
+  start_time: string;
+  pet_name: string;
+  service_category: string; // 'cut', 'bath', 'other'
+  service_name: string;
 }
 
-// --- UTILS ---
 const formatMoney = (amount: number) => {
   return new Intl.NumberFormat('es-MX', { 
     style: 'currency', 
@@ -101,6 +103,79 @@ function BentoMetric({ title, value, subtext, icon: Icon, className, trend, href
   return Content;
 }
 
+// --- WIDGET DE AGENDA (Nuevo) ---
+function AgendaWidget({ appointments }: { appointments: AppointmentItem[] }) {
+  // Generar horas operativas (ej. 9:00 a 19:00)
+  const hours = Array.from({ length: 11 }, (_, i) => i + 9); // 9, 10... 19
+
+  // Agrupar citas por hora
+  const apptsByHour: Record<number, AppointmentItem[]> = {};
+  appointments.forEach(app => {
+    const h = getHours(parseISO(app.start_time));
+    if (!apptsByHour[h]) apptsByHour[h] = [];
+    apptsByHour[h].push(app);
+  });
+
+  const getServiceStyle = (cat: string) => {
+    const c = cat?.toLowerCase() || '';
+    if (c.includes('corte') || c.includes('cut')) return { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500', icon: Scissors };
+    if (c.includes('baño') || c.includes('bath')) return { bg: 'bg-cyan-100', text: 'text-cyan-700', dot: 'bg-cyan-500', icon: Droplets };
+    return { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500', icon: Sparkles };
+  };
+
+  return (
+    <Card className="col-span-1 md:col-span-2 shadow-sm border-slate-200 flex flex-col h-full overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between pb-2 bg-white z-10 border-b border-slate-100">
+        <div>
+          <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <CalendarCheck className="h-4 w-4 text-slate-500"/> Agenda del Día
+          </CardTitle>
+          <p className="text-xs text-slate-500">Vista rápida de ocupación</p>
+        </div>
+        <div className="flex gap-2 text-[10px] font-medium text-slate-500">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-500"></span>Baño</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span>Corte</span>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-y-auto p-0 scroll-smooth">
+        <div className="divide-y divide-slate-50">
+          {hours.map((hour) => {
+            const slotAppts = apptsByHour[hour] || [];
+            const isPast = hour < new Date().getHours();
+
+            return (
+              <div key={hour} className={cn("flex group transition-colors hover:bg-slate-50/80 min-h-[50px]", isPast && "opacity-60 bg-slate-50/30")}>
+                {/* Columna Hora */}
+                <div className="w-16 flex-shrink-0 border-r border-slate-100 flex items-center justify-center text-xs font-semibold text-slate-400 group-hover:text-slate-600">
+                  {hour}:00
+                </div>
+                
+                {/* Columna Citas */}
+                <div className="flex-1 p-2 flex flex-wrap gap-2 items-center">
+                  {slotAppts.length > 0 ? (
+                    slotAppts.map((appt) => {
+                      const style = getServiceStyle(appt.service_category || appt.service_name);
+                      return (
+                        <div key={appt.id} className={cn("flex items-center gap-2 px-2.5 py-1 rounded-full border transition-all shadow-sm", style.bg, "border-transparent group-hover:border-slate-200/50")}>
+                          <span className={cn("w-2 h-2 rounded-full animate-pulse", style.dot)}></span>
+                          <span className={cn("text-xs font-bold truncate max-w-[100px]", style.text)}>{appt.pet_name}</span>
+                          <style.icon size={10} className={cn("opacity-70", style.text)}/>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span className="text-[10px] text-slate-300 italic font-medium ml-2">Disponible</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RecentClientsList({ clients }: { clients: any[] }) {
   return (
     <Card className="col-span-1 md:col-span-2 lg:col-span-2 shadow-sm border-slate-200">
@@ -154,7 +229,6 @@ export default async function DashboardPage() {
   // 1. Obtener Usuario y Rol Real
   const { data: { user } } = await supabase.auth.getUser();
   
-  // Buscar datos del empleado para saber el rol y nombre
   let role = 'employee';
   let displayName = 'Usuario';
 
@@ -188,21 +262,10 @@ export default async function DashboardPage() {
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' });
   const todayStart = `${todayStr}T00:00:00-06:00`;
   const todayEnd = `${todayStr}T23:59:59.999-06:00`;
-  
   const currentMonthStr = todayStr.substring(0, 7); 
   const monthStart = `${currentMonthStr}-01T00:00:00-06:00`;
 
-  const weekStartObj = startOfWeek(now, { weekStartsOn: 1 });
-  const weekEndObj = endOfWeek(now, { weekStartsOn: 1 });
-  const weekStart = format(weekStartObj, "yyyy-MM-dd'T'00:00:00");
-  const weekEnd = format(weekEndObj, "yyyy-MM-dd'T'23:59:59");
-
-  const prevWeekStartObj = subWeeks(weekStartObj, 1);
-  const prevWeekEndObj = subWeeks(weekEndObj, 1);
-  const prevWeekStart = format(prevWeekStartObj, "yyyy-MM-dd'T'00:00:00");
-  const prevWeekEnd = format(prevWeekEndObj, "yyyy-MM-dd'T'23:59:59");
-
-  // 4. Fetch de Datos
+  // 4. Fetch de Métricas Generales
   const getSimpleMetrics = async (start: string, end: string) => {
       const { data } = await supabase.from('view_finance_appointments').select('final_price, status').gte('date', start).lte('date', end);
       if (!data) return { revenue: 0, count: 0, pending: 0 };
@@ -217,51 +280,35 @@ export default async function DashboardPage() {
       };
   };
 
-  // AQUÍ ESTABA EL ERROR: Declarar el tipo explícito para evitar 'implicit any[]'
-  let weeklyData: WeeklyMetric[] = [];
-  let growthPercentage = 0;
-  let totalWeekRevenue = 0;
+  // 5. Fetch para la AGENDA VISUAL (Reemplaza el gráfico financiero)
+  // Obtenemos: Hora, Mascota y Servicio para pintar las bolitas
+  let agendaItems: AppointmentItem[] = [];
+  const { data: rawAgenda } = await supabase
+    .from('appointments')
+    .select(`
+        id, start_time, status,
+        pets ( name ),
+        appointment_services ( services ( name, category ) )
+    `)
+    .gte('start_time', todayStart)
+    .lte('start_time', todayEnd)
+    .neq('status', 'cancelled');
 
-  if (canViewFinancials) {
-      const { data: currentWeekRaw } = await supabase.from('view_finance_appointments')
-        .select('date, final_price, status')
-        .gte('date', weekStart)
-        .lte('date', weekEnd)
-        .in('status', ['completed', 'attended']);
-
-      const { data: prevWeekRaw } = await supabase.from('view_finance_appointments')
-        .select('final_price')
-        .gte('date', prevWeekStart)
-        .lte('date', prevWeekEnd)
-        .in('status', ['completed', 'attended']);
-
-      const daysMap = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-      const dailyTotals = new Array(7).fill(0);
-
-      currentWeekRaw?.forEach((appt: any) => {
-          const date = new Date(appt.date);
-          let dayIndex = date.getDay() - 1; 
-          if (dayIndex === -1) dayIndex = 6;
-          dailyTotals[dayIndex] += (Number(appt.final_price) || 0);
+  if (rawAgenda) {
+      agendaItems = rawAgenda.map((item: any) => {
+          // Extraer info del primer servicio (asumiendo principal)
+          const svc = item.appointment_services?.[0]?.services;
+          return {
+              id: item.id,
+              start_time: item.start_time,
+              pet_name: item.pets?.name || 'Mascota',
+              service_name: svc?.name || 'Servicio',
+              service_category: svc?.category || 'other'
+          };
       });
-
-      totalWeekRevenue = dailyTotals.reduce((a, b) => a + b, 0);
-      const prevWeekTotal = prevWeekRaw?.reduce((acc: number, curr: any) => acc + (Number(curr.final_price) || 0), 0) || 0;
-
-      if (prevWeekTotal > 0) {
-          growthPercentage = ((totalWeekRevenue - prevWeekTotal) / prevWeekTotal) * 100;
-      } else if (totalWeekRevenue > 0) {
-          growthPercentage = 100;
-      }
-
-      const maxVal = Math.max(...dailyTotals, 1);
-      weeklyData = dailyTotals.map((val, i) => ({
-          day: daysMap[i],
-          value: val,
-          heightPct: Math.round((val / maxVal) * 100)
-      }));
   }
 
+  // Ejecutar queries paralelas
   const [todayMetrics, monthMetrics, recentClients] = await Promise.all([
       getSimpleMetrics(todayStart, todayEnd),
       getSimpleMetrics(monthStart, todayEnd),
@@ -282,7 +329,7 @@ export default async function DashboardPage() {
               {greeting}, {displayName} <span className="inline-block animate-wave">👋</span>
             </h1>
             <p className="text-slate-500 mt-1 text-sm md:text-base">
-              Resumen operativo en tiempo real.
+              Panel de control operativo.
             </p>
           </div>
           
@@ -335,7 +382,7 @@ export default async function DashboardPage() {
             className="border-l-4 border-l-indigo-500"
           />
 
-          {/* BLOQUE 4: Clientes / Ingresos Mes */}
+          {/* BLOQUE 4: Ingresos Mes / Directorio */}
           {canViewFinancials ? (
               <BentoMetric 
                 title="Ingresos Mes"
@@ -355,43 +402,12 @@ export default async function DashboardPage() {
 
           {/* FILA 2 */}
 
-          {/* BLOQUE 5: Gráfico Semanal (SOLO ADMIN/MANAGER/RECEPTION) */}
-          {canViewFinancials && (
-            <Card className="col-span-1 md:col-span-2 shadow-sm border-slate-200 flex flex-col justify-between overflow-hidden">
-                <CardHeader className="flex flex-row items-start justify-between pb-2">
-                    <div>
-                        <CardTitle className="text-base font-bold text-slate-900">Rendimiento Semanal</CardTitle>
-                        <p className="text-xs text-slate-500">Facturación acumulada: <span className="font-bold text-slate-900">{formatMoney(totalWeekRevenue)}</span></p>
-                    </div>
-                    <div className={cn("px-2 py-1 rounded text-xs font-bold flex items-center", 
-                        growthPercentage >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-                    )}>
-                        {growthPercentage >= 0 ? <ArrowUpRight size={14} className="mr-1"/> : <ArrowDownRight size={14} className="mr-1"/>}
-                        {Math.abs(growthPercentage).toFixed(1)}% vs semana ant.
-                    </div>
-                </CardHeader>
-                <CardContent className="h-48 flex items-end justify-between gap-3 px-6 pb-6 pt-2">
-                    {weeklyData.map((d, i) => (
-                        <div key={i} className="flex flex-col items-center justify-end w-full h-full group gap-2">
-                            <div className="w-full bg-slate-100 rounded-t-md relative overflow-hidden h-full flex items-end">
-                                <div 
-                                    className="w-full bg-slate-900 rounded-t-md transition-all duration-1000 ease-out group-hover:bg-blue-600" 
-                                    style={{ height: `${d.heightPct}%` }}
-                                >
-                                    <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-2 py-1 rounded whitespace-nowrap transition-opacity pointer-events-none z-10">
-                                        {formatMoney(d.value)}
-                                    </div>
-                                </div>
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
-                        </div>
-                    ))}
-                </CardContent>
-            </Card>
-          )}
+          {/* BLOQUE 5: AGENDA VISUAL (Reemplaza Gráfico) */}
+          {/* Ocupa 2 columnas, mostrando el timeline de 9am a 7pm */}
+          <AgendaWidget appointments={agendaItems} />
 
-          {/* BLOQUE 6: Lista Reciente (Ocupa el espacio restante) */}
-          <div className={cn("col-span-1 lg:col-span-2", !canViewFinancials && "lg:col-span-4")}>
+          {/* BLOQUE 6: Lista Reciente */}
+          <div className={cn("col-span-1 lg:col-span-2")}>
              <RecentClientsList clients={recentClients.data || []} />
           </div>
 
