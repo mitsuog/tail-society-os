@@ -1,56 +1,53 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import Search from '@/components/Search';
-import ClientFilters from '@/components/ClientFilters';
-import Pagination from '@/components/Pagination';
-import ClientRow from '@/components/ClientRow';
-import DashboardNewClientBtn from '@/components/DashboardNewClientBtn';
-import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableHead, TableHeader, TableRow, TableCell } from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
-  SearchX, TabletSmartphone, CalendarPlus, 
-  Banknote, TrendingUp, CalendarCheck, Dog, Filter 
+  Banknote, CalendarCheck, Users, TrendingUp, 
+  MapPin, Sun, Cloud, Wind, ArrowUpRight, MoreHorizontal,
+  CalendarPlus, Search
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
+import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
 
 export const dynamic = 'force-dynamic';
 
-const ITEMS_PER_PAGE = 10;
+// --- COMPONENTES VISUALES (BENTO UI) ---
 
-// --- COMPONENTE KPI MEJORADO ---
-function MetricCard({ title, value, icon: Icon, description, colorClass, trend }: any) {
+// 1. Widget de Clima (San Pedro Garza García)
+// Nota: En producción, esto debería conectar a una API de clima real.
+function WeatherWidget() {
   return (
-    <Card className={cn(
-      "border-l-4 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group cursor-default",
-      "hover:scale-[1.02] active:scale-[0.98]"
-    )}>
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex justify-between items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 truncate">
-              {title}
-            </p>
-            <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 mb-1 break-words">
-              {value}
-            </h3>
-            {description && (
-              <p className={cn(
-                "text-[10px] sm:text-xs font-medium truncate",
-                trend === 'positive' ? 'text-green-600' : 
-                trend === 'negative' ? 'text-red-600' : 'text-slate-400'
-              )}>
-                {description}
-              </p>
-            )}
+    <Card className="col-span-1 md:col-span-2 lg:col-span-1 bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-none shadow-xl overflow-hidden relative group">
+      {/* Decoración de fondo */}
+      <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/20 rounded-full blur-2xl group-hover:bg-white/30 transition-all duration-500"></div>
+      <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-20 h-20 bg-blue-400/30 rounded-full blur-xl"></div>
+
+      <CardContent className="p-6 relative z-10 flex flex-col justify-between h-full min-h-[180px]">
+        <div>
+          <div className="flex items-center gap-1.5 text-blue-100 text-[10px] font-bold uppercase tracking-wider mb-1">
+            <MapPin size={10} /> San Pedro Garza García, NL
           </div>
-          <div className={cn(
-            "p-2.5 sm:p-3 rounded-xl text-white shrink-0 transition-transform duration-300 group-hover:scale-110",
-            colorClass
-          )}>
-            <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
+          <div className="flex items-center gap-3">
+            <h3 className="text-4xl font-bold tracking-tighter">24°</h3>
+            <Sun className="h-8 w-8 text-yellow-300 animate-pulse" />
+          </div>
+          <p className="text-blue-100 text-xs font-medium mt-1">Mayormente Soleado</p>
+        </div>
+
+        <div className="flex items-center justify-between mt-4 border-t border-white/20 pt-3">
+          <div className="flex flex-col text-center">
+            <span className="text-[10px] text-blue-200">Humedad</span>
+            <span className="text-xs font-bold">45%</span>
+          </div>
+          <div className="flex flex-col text-center">
+            <span className="text-[10px] text-blue-200">Viento</span>
+            <span className="text-xs font-bold">12km/h</span>
+          </div>
+          <div className="flex flex-col text-center">
+            <span className="text-[10px] text-blue-200">Mañana</span>
+            <span className="text-xs font-bold">26°</span>
           </div>
         </div>
       </CardContent>
@@ -58,471 +55,204 @@ function MetricCard({ title, value, icon: Icon, description, colorClass, trend }
   );
 }
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ q?: string, sort?: string, species?: string, page?: string }> }) {
-  const params = await searchParams;
-  const queryText = (params?.q || '').trim();
-  const sort = params?.sort || 'newest'; 
-  const speciesFilter = params?.species || ''; 
-  const currentPage = Number(params?.page) || 1;
-  const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+// 2. Tarjeta KPI Estilo Bento
+function BentoMetric({ title, value, subtext, icon: Icon, className, trend }: any) {
+  return (
+    <Card className={cn("flex flex-col justify-between shadow-sm border-slate-200 hover:shadow-md transition-all duration-300 group", className)}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium text-slate-500">{title}</CardTitle>
+        <div className={cn("p-2 rounded-full bg-slate-50 group-hover:bg-slate-100 transition-colors", 
+          trend === 'up' ? "text-emerald-600" : "text-slate-600")}>
+          <Icon className="h-4 w-4" />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold text-slate-900">{value}</div>
+        <p className="text-xs text-slate-500 mt-1 flex items-center">
+          {trend === 'up' && <ArrowUpRight className="h-3 w-3 text-emerald-500 mr-1" />}
+          {subtext}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
+// 3. Tarjeta de Lista Rápida (Últimos Clientes)
+function RecentClientsList({ clients }: { clients: any[] }) {
+  return (
+    <Card className="col-span-1 md:col-span-2 lg:col-span-2 shadow-sm border-slate-200">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div>
+          <CardTitle className="text-base font-bold text-slate-900">Actividad Reciente</CardTitle>
+          <p className="text-xs text-slate-500">Últimos clientes registrados o activos</p>
+        </div>
+        <Link href="/admin/clients">
+          <Button variant="ghost" size="sm" className="text-xs h-8">Ver todos</Button>
+        </Link>
+      </CardHeader>
+      <CardContent className="px-0">
+        <div className="flex flex-col">
+          {clients.slice(0, 5).map((client, i) => (
+            <div key={client.id} className="flex items-center justify-between py-3 px-6 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                  {client.full_name.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{client.full_name}</p>
+                  <p className="text-xs text-slate-500 flex items-center gap-1">
+                    <Users size={10} /> {client.pets?.length || 0} Mascotas
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <Badge variant="outline" className="text-[10px] font-normal text-slate-500 border-slate-200">
+                  {new Date(client.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                </Badge>
+              </div>
+            </div>
+          ))}
+          {clients.length === 0 && (
+            <div className="p-6 text-center text-sm text-slate-400">Sin actividad reciente.</div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- PÁGINA PRINCIPAL (SERVER COMPONENT) ---
+
+export default async function DashboardPage() {
   const supabase = await createClient();
 
-  // =================================================================================
-  // 1. CARGA DE KPIs (Financieros y Operativos)
-  // =================================================================================
+  // 1. Saludo Dinámico (Monterrey Time)
+  const { data: { user } } = await supabase.auth.getUser();
+  const userName = user?.user_metadata?.first_name || user?.user_metadata?.full_name?.split(' ')[0] || 'Admin';
+  
+  const hour = Number(new Date().toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/Monterrey' }));
+  let greeting = 'Buenos días';
+  if (hour >= 12) greeting = 'Buenas tardes';
+  if (hour >= 19) greeting = 'Buenas noches';
+
+  // 2. Obtener Fechas para KPIs
   const getMonterreyRangeISO = (date: Date) => {
     const mtyDate = date.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' });
-    return {
-       start: `${mtyDate}T00:00:00-06:00`,
-       end: `${mtyDate}T23:59:59.999-06:00`
-    };
+    return { start: `${mtyDate}T00:00:00-06:00`, end: `${mtyDate}T23:59:59.999-06:00` };
   };
-
   const now = new Date();
   const { start: todayStart, end: todayEnd } = getMonterreyRangeISO(now);
-  
-  const lastWeekDate = new Date(now);
-  lastWeekDate.setDate(now.getDate() - 7);
-  const { start: lastWeekStart, end: lastWeekEnd } = getMonterreyRangeISO(lastWeekDate);
-
   const currentMonthStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' }).substring(0, 7); 
   const monthStart = `${currentMonthStr}-01T00:00:00-06:00`;
 
+  // 3. Fetch de Datos (Paralelo y Optimizado)
   const getMetrics = async (start: string, end: string) => {
-      const { data } = await supabase
-          .from('view_finance_appointments') 
-          .select('final_price, status')
-          .gte('date', start)
-          .lte('date', end);
-      
-      if (!data) return { revenue: 0, completed: 0, agenda: 0, pending: 0 };
-
-      const active = data.filter((a: any) => !['cancelled', 'no_show'].includes(a.status));
-      const completedList = active.filter((a: any) => ['completed', 'attended'].includes(a.status));
-      const pendingList = active.filter((a: any) => !['completed', 'attended'].includes(a.status));
-      const revenue = completedList.reduce((sum: number, item: any) => sum + (Number(item.final_price) || 0), 0);
-
-      return { revenue, completed: completedList.length, agenda: active.length, pending: pendingList.length };
+      const { data } = await supabase.from('view_finance_appointments').select('final_price, status').gte('date', start).lte('date', end);
+      if (!data) return { revenue: 0, count: 0 };
+      const valid = data.filter((a:any) => ['completed', 'attended'].includes(a.status));
+      return { 
+          revenue: valid.reduce((acc: number, curr: any) => acc + (Number(curr.final_price) || 0), 0),
+          count: valid.length,
+          pending: data.filter((a:any) => !['cancelled', 'no_show', 'completed', 'attended'].includes(a.status)).length
+      };
   };
 
-  const [todayMetrics, lastWeekMetrics, monthMetrics, newClientsCount, totalActiveClients] = await Promise.all([
+  const [todayMetrics, monthMetrics, recentClients] = await Promise.all([
       getMetrics(todayStart, todayEnd),
-      getMetrics(lastWeekStart, lastWeekEnd),
       getMetrics(monthStart, todayEnd),
-      supabase.from('clients').select('*', { count: 'exact', head: true }).gte('created_at', monthStart),
-      supabase.from('clients').select('*', { count: 'exact', head: true }).eq('is_active', true)
+      supabase.from('clients')
+        .select('id, full_name, created_at, pets(count)')
+        .order('created_at', { ascending: false })
+        .limit(6)
   ]);
 
-  const diffRevenue = todayMetrics.revenue - lastWeekMetrics.revenue;
-  const isPositiveTrend = diffRevenue >= 0;
-  const trendLabel = `${isPositiveTrend ? '+' : ''}${Math.abs(diffRevenue).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 })} vs. sem. ant.`;
-
-  // =================================================================================
-  // 2. LÓGICA DE BÚSQUEDA (Pre-cálculo de IDs)
-  // =================================================================================
-  
-  let searchIds: string[] | null = null;
-
-  if (queryText) {
-    const { data: petsFound } = await supabase
-      .from('pets')
-      .select('client_id')
-      .ilike('name', `%${queryText}%`)
-      .limit(50);
-    
-    const petOwnerIds = petsFound ? petsFound.map(p => p.client_id) : [];
-
-    const { data: clientsFound } = await supabase
-      .from('clients')
-      .select('id')
-      .or(`full_name.ilike.%${queryText}%,phone.ilike.%${queryText}%,email.ilike.%${queryText}%`)
-      .limit(50);
-      
-    const clientMatchIds = clientsFound ? clientsFound.map(c => c.id) : [];
-
-    searchIds = Array.from(new Set([...clientMatchIds, ...petOwnerIds]));
-  }
-
-  // =================================================================================
-  // 3. ESTRATEGIA DE ORDENAMIENTO Y CONSULTA
-  // =================================================================================
-  
-  let clients: any[] = [];
-  let totalCount = 0;
-
-  if (sort === 'last_visit') {
-      const { data: recentAppts } = await supabase
-        .from('appointments')
-        .select('client_id, date')
-        .in('status', ['completed', 'attended']) 
-        .order('date', { ascending: false })
-        .limit(1000);
-      
-      let orderedIds = recentAppts ? Array.from(new Set(recentAppts.map(a => a.client_id))) : [];
-
-      if (searchIds !== null) {
-          const matching = orderedIds.filter(id => searchIds!.includes(id));
-          const extras = searchIds.filter(id => !orderedIds.includes(id));
-          orderedIds = [...matching, ...extras];
-      } else if (searchIds === null && orderedIds.length === 0) {
-          const { data: defaultClients } = await supabase.from('clients').select('id').order('created_at', {ascending: false}).limit(50);
-          if (defaultClients) orderedIds = defaultClients.map(c => c.id);
-      }
-
-      if (speciesFilter && speciesFilter !== 'all') {
-          const { data: petsWithSpecies } = await supabase
-              .from('pets')
-              .select('client_id')
-              .eq('species', speciesFilter);
-          
-          if (petsWithSpecies) {
-              const clientIdsWithSpecies = Array.from(new Set(petsWithSpecies.map(p => p.client_id)));
-              orderedIds = orderedIds.filter(id => clientIdsWithSpecies.includes(id));
-          } else {
-              orderedIds = [];
-          }
-      }
-
-      totalCount = orderedIds.length;
-      const pageIds = orderedIds.slice(offset, offset + ITEMS_PER_PAGE);
-
-      if (pageIds.length > 0) {
-          const { data } = await supabase
-            .from('clients')
-            .select(`*, pets ( id, name, breed, species, appointments ( date, status ) )`)
-            .in('id', pageIds);
-          
-          if (data) {
-              const orderMap = new Map(pageIds.map((id, idx) => [id, idx]));
-              clients = data.sort((a: any, b: any) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
-          }
-      }
-  }
-  else if (sort === 'newest') {
-      const { data: recentAppts } = await supabase
-        .from('appointments')
-        .select('client_id')
-        .in('status', ['completed', 'attended']) 
-        .order('date', { ascending: false })
-        .limit(1000);
-      
-      let orderedIds = recentAppts ? Array.from(new Set(recentAppts.map(a => a.client_id))) : [];
-
-      if (searchIds !== null) {
-          const matching = orderedIds.filter(id => searchIds!.includes(id));
-          const extras = searchIds.filter(id => !orderedIds.includes(id));
-          orderedIds = [...matching, ...extras];
-      } else if (searchIds === null && orderedIds.length === 0) {
-          const { data: defaultClients } = await supabase.from('clients').select('id').order('created_at', {ascending: false}).limit(50);
-          if (defaultClients) orderedIds = defaultClients.map(c => c.id);
-      }
-
-      if (speciesFilter && speciesFilter !== 'all') {
-          const { data: petsWithSpecies } = await supabase
-              .from('pets')
-              .select('client_id')
-              .eq('species', speciesFilter);
-          
-          if (petsWithSpecies) {
-              const clientIdsWithSpecies = Array.from(new Set(petsWithSpecies.map(p => p.client_id)));
-              orderedIds = orderedIds.filter(id => clientIdsWithSpecies.includes(id));
-          } else {
-              orderedIds = [];
-          }
-      }
-
-      totalCount = orderedIds.length;
-      const pageIds = orderedIds.slice(offset, offset + ITEMS_PER_PAGE);
-
-      if (pageIds.length > 0) {
-          const { data } = await supabase
-            .from('clients')
-            .select(`*, pets ( id, name, breed, species, appointments ( date, status ) )`)
-            .in('id', pageIds);
-          
-          if (data) {
-              const orderMap = new Map(pageIds.map((id, idx) => [id, idx]));
-              clients = data.sort((a: any, b: any) => (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0));
-          }
-      }
-  }
-  else {
-      let query = supabase
-        .from('clients')
-        .select(`*, pets ( id, name, breed, species, appointments ( date, status ) )`, { count: 'exact' });
-
-      if (searchIds !== null) {
-          if (searchIds.length === 0) {
-              clients = [];
-              totalCount = 0;
-          } else {
-              query = query.in('id', searchIds);
-          }
-      }
-
-      if (speciesFilter && speciesFilter !== 'all' && searchIds?.length !== 0) {
-          const { data: petsWithSpecies } = await supabase
-              .from('pets')
-              .select('client_id')
-              .eq('species', speciesFilter);
-          
-          if (petsWithSpecies && petsWithSpecies.length > 0) {
-              const clientIdsWithSpecies = Array.from(new Set(petsWithSpecies.map(p => p.client_id)));
-              
-              if (searchIds !== null) {
-                  const combinedIds = searchIds.filter(id => clientIdsWithSpecies.includes(id));
-                  if (combinedIds.length === 0) {
-                      clients = [];
-                      totalCount = 0;
-                  } else {
-                      query = query.in('id', combinedIds);
-                  }
-              } else {
-                  query = query.in('id', clientIdsWithSpecies);
-              }
-          } else {
-              clients = [];
-              totalCount = 0;
-          }
-      }
-
-      if (totalCount === 0 && clients.length === 0 && (searchIds === null || searchIds.length > 0)) {
-          if (sort === 'name_asc') {
-              query = query.order('full_name', { ascending: true });
-          } else if (sort === 'name_desc') {
-              query = query.order('full_name', { ascending: false });
-          } else if (sort === 'oldest') {
-              query = query.order('created_at', { ascending: true });
-          } else {
-              query = query.order('created_at', { ascending: false });
-          }
-
-          query = query.range(offset, offset + ITEMS_PER_PAGE - 1);
-
-          const { data, count } = await query;
-          clients = data || [];
-          totalCount = count || 0;
-      }
-  }
-
-  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
-
-  const getLastVisit = (client: any) => {
-    if (!client.pets || client.pets.length === 0) return null;
-    const allAppointments = client.pets.flatMap((pet: any) => pet.appointments || []);
-    if (allAppointments.length === 0) return null;
-    
-    const completed = allAppointments.filter((a:any) => ['completed', 'attended'].includes(a.status));
-    if(completed.length > 0) {
-        const dates = completed.map((a: any) => new Date(a.date).getTime());
-        return new Date(Math.max(...dates));
-    }
-    
-    const dates = allAppointments.map((a: any) => new Date(a.date).getTime());
-    return new Date(Math.max(...dates));
-  };
-
-  // =================================================================================
-  // 4. RENDERIZADO UI OPTIMIZADO
-  // =================================================================================
+  // --- RENDERIZADO BENTO GRID ---
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden">
-      {/* CONTENEDOR CON SCROLL */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[1600px] mx-auto p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 pb-20 animate-in fade-in duration-500">
+    <div className="flex flex-col h-full w-full bg-slate-50/50 overflow-y-auto">
+      <div className="max-w-[1600px] mx-auto w-full p-4 md:p-8 space-y-6">
+        
+        {/* HEADER: Saludo y Acciones Rápidas */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-2">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+              {greeting}, {userName} <span className="inline-block animate-wave">👋</span>
+            </h1>
+            <p className="text-slate-500 mt-1 text-sm md:text-base">
+              Aquí tienes el resumen operativo de hoy en San Pedro.
+            </p>
+          </div>
           
-          {/* ===================== HEADER MEJORADO ===================== */}
-          <div className="flex flex-col gap-3 sm:gap-4 border-b border-slate-200 pb-3 sm:pb-4">
-            
-            {/* Fila 1: Título y Status */}
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="h-2 w-2 sm:h-2.5 sm:w-2.5 md:h-3 md:w-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)] shrink-0"></div>
-                  <h1 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight truncate">
-                    Centro de Mando
-                  </h1>
-                </div>
-                <p className="text-[10px] sm:text-xs md:text-sm text-slate-500 capitalize font-medium ml-4 sm:ml-5 md:ml-6 mt-0.5 truncate">
-                  {new Date(now).toLocaleDateString('es-MX', { 
-                    weekday: 'long', 
-                    day: 'numeric', 
-                    month: 'long',
-                    timeZone: 'America/Monterrey' 
-                  })}
-                </p>
-              </div>
-            </div>
-
-            {/* Fila 2: Botones de Acción */}
-            <div className="flex flex-wrap gap-2 sm:gap-2.5">
-              <Link href="/checkin" className="flex-1 sm:flex-none">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="w-full sm:w-auto gap-2 border-slate-300 text-slate-600 h-9 sm:h-10 text-xs sm:text-sm hover:bg-slate-50 active:scale-95 transition-transform"
-                >
-                  <TabletSmartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4"/>
-                  <span>Kiosco</span>
+          <div className="flex gap-2">
+             <Link href="/admin/clients">
+                <Button variant="outline" className="bg-white border-slate-200 shadow-sm text-slate-600 hover:bg-slate-50">
+                    <Search className="mr-2 h-4 w-4" /> Buscar Cliente
                 </Button>
-              </Link>
-              
-              <div className="flex-1 sm:flex-none">
-                <DashboardNewClientBtn />
-              </div>
-              
-              <div className="flex-1 sm:flex-none">
-                <NewAppointmentDialog 
-                  customTrigger={
-                    <Button 
-                      size="sm" 
-                      className="w-full sm:w-auto gap-2 bg-slate-900 hover:bg-slate-800 text-white h-9 sm:h-10 shadow-md text-xs sm:text-sm active:scale-95 transition-transform"
-                    >
-                      <CalendarPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4"/>
-                      <span>Nueva Cita</span>
-                    </Button>
-                  }
-                />
-              </div>
-            </div>
+             </Link>
+             <NewAppointmentDialog 
+                customTrigger={
+                  <Button className="bg-slate-900 text-white hover:bg-slate-800 shadow-md">
+                    <CalendarPlus className="mr-2 h-4 w-4" /> Nueva Cita
+                  </Button>
+                }
+             />
           </div>
+        </div>
 
-          {/* ===================== KPI GRID MEJORADO ===================== */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <MetricCard 
-              title="Ingresos Hoy" 
-              value={`$${todayMetrics.revenue.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-              icon={Banknote} 
-              description={trendLabel}
-              trend={isPositiveTrend ? 'positive' : 'negative'}
-              colorClass="bg-emerald-500"
-            />
-            <MetricCard 
-              title="Agenda Hoy" 
-              value={todayMetrics.agenda} 
-              icon={CalendarCheck} 
-              description={`${todayMetrics.pending} pendientes`}
-              colorClass="bg-indigo-500"
-            />
-            <MetricCard 
-              title="Venta Mes" 
-              value={`$${monthMetrics.revenue.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-              icon={TrendingUp} 
-              description={`${monthMetrics.completed} completadas`}
-              colorClass="bg-blue-500"
-            />
-            <MetricCard 
-              title="Clientes" 
-              value={totalActiveClients.count} 
-              icon={Dog} 
-              description={`+${newClientsCount.count} nuevos`}
-              colorClass="bg-slate-500"
-              trend="positive"
-            />
-          </div>
+        {/* LAYOUT BENTO GRID */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          
+          {/* BLOQUE 1: Clima (Destacado) */}
+          <WeatherWidget />
 
-          {/* ===================== TABLA MEJORADA ===================== */}
-          <Card className="border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-            
-            {/* BARRA DE HERRAMIENTAS MEJORADA */}
-            <div className="sticky top-0 z-20 bg-white border-b border-slate-200 p-3 sm:p-4 flex flex-col gap-3 shadow-sm">
-              
-              {/* Búsqueda - Siempre arriba en móvil */}
-              <div className="w-full">
-                <Search placeholder="Buscar cliente, mascota o teléfono..." />
-              </div>
-              
-              {/* Filtros - Abajo en móvil, al lado en desktop */}
-              <div className="flex items-center justify-between gap-3">
-                <ClientFilters />
-                
-                {/* Badge de resultados - Solo visible en desktop */}
-                {totalCount > 0 && (
-                  <Badge variant="secondary" className="hidden sm:flex text-xs font-medium whitespace-nowrap">
-                    {totalCount} resultados
-                  </Badge>
-                )}
-              </div>
-            </div>
+          {/* BLOQUE 2: Ingresos Hoy */}
+          <BentoMetric 
+            title="Ingresos Hoy"
+            value={`$${todayMetrics.revenue.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
+            subtext={`${todayMetrics.count} servicios pagados`}
+            icon={Banknote}
+            trend="up"
+          />
 
-            {/* TABLA RESPONSIVA */}
-            <div className="flex-1 overflow-x-auto">
-              <Table className="min-w-[700px]">
-                <TableHeader className="bg-slate-50/80 sticky top-0 z-10">
-                  <TableRow className="hover:bg-slate-50/80">
-                    <TableHead className="w-[30%] font-bold text-slate-700 pl-4 sm:pl-6 text-xs sm:text-sm">
-                      Cliente
-                    </TableHead>
-                    <TableHead className="w-[25%] font-bold text-slate-700 text-xs sm:text-sm">
-                      Mascotas
-                    </TableHead>
-                    <TableHead className="w-[20%] font-bold text-slate-700 hidden md:table-cell text-xs sm:text-sm">
-                      Última Visita
-                    </TableHead>
-                    <TableHead className="w-[25%] text-right font-bold text-slate-700 pr-4 sm:pr-6 text-xs sm:text-sm">
-                      Acciones
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {clients.map((client: any) => (
-                    <ClientRow 
-                      key={client.id} 
-                      client={client} 
-                      lastVisitDate={getLastVisit(client)} 
-                      firstVisitDate={null} 
-                    />
-                  ))}
-                  
-                  {/* ESTADO VACÍO MEJORADO */}
-                  {clients.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="h-64">
-                        <div className="flex flex-col items-center justify-center text-center px-4">
-                          <div className="bg-slate-50 p-4 sm:p-6 rounded-full mb-4">
-                            <SearchX className="h-10 w-10 sm:h-12 sm:w-12 text-slate-300" />
-                          </div>
-                          <p className="text-base sm:text-lg font-semibold text-slate-600 mb-2">
-                            No se encontraron resultados
-                          </p>
-                          <p className="text-xs sm:text-sm text-slate-500 max-w-sm">
-                            {queryText 
-                              ? `Sin coincidencias para "${queryText}"` 
-                              : "No hay clientes registrados en el sistema."}
-                          </p>
-                          {(queryText || speciesFilter) && (
-                            <Link href="/" className="mt-4">
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                              >
-                                Limpiar filtros
-                              </Button>
-                            </Link>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            
-            {/* FOOTER CON PAGINACIÓN MEJORADO */}
-            {totalCount > 0 && (
-              <div className="border-t border-slate-100 bg-slate-50/50 p-3 sm:p-4 flex flex-col sm:flex-row justify-between items-center gap-3">
-                <p className="text-xs sm:text-sm text-slate-500 text-center sm:text-left order-2 sm:order-1">
-                  Mostrando <span className="font-semibold text-slate-700">{clients.length}</span> de{' '}
-                  <span className="font-semibold text-slate-700">{totalCount}</span> resultados
-                </p>
-                <div className="order-1 sm:order-2 w-full sm:w-auto flex justify-center">
-                  <Pagination totalPages={totalPages} />
-                </div>
-              </div>
-            )}
+          {/* BLOQUE 3: Agenda Activa */}
+          <BentoMetric 
+            title="Citas Pendientes"
+            value={todayMetrics.pending}
+            subtext="Para el resto del día"
+            icon={CalendarCheck}
+            className="border-l-4 border-l-indigo-500"
+          />
+
+          {/* BLOQUE 4: Ingresos Mes */}
+          <BentoMetric 
+            title="Ingresos Mes"
+            value={`$${monthMetrics.revenue.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
+            subtext="Acumulado bruto"
+            icon={TrendingUp}
+          />
+
+          {/* FILA 2 */}
+
+          {/* BLOQUE 5: Gráfico Simple (Simulado con CSS por simplicidad en Server Component) */}
+          <Card className="col-span-1 md:col-span-2 shadow-sm border-slate-200 flex flex-col justify-between">
+             <CardHeader>
+                <CardTitle className="text-base font-bold text-slate-900">Rendimiento Semanal</CardTitle>
+             </CardHeader>
+             <CardContent className="h-40 flex items-end justify-between gap-2 px-6 pb-6">
+                {/* Barras simuladas con Tailwind para no depender de librerías de gráficos complejas en este snippet */}
+                {[45, 60, 35, 70, 85, 55, 65].map((h, i) => (
+                    <div key={i} className="w-full bg-slate-100 rounded-t-sm relative group overflow-hidden" style={{ height: '100%' }}>
+                        <div 
+                            className="absolute bottom-0 w-full bg-slate-900 rounded-t-sm transition-all duration-500 group-hover:bg-blue-600" 
+                            style={{ height: `${h}%` }}
+                        ></div>
+                    </div>
+                ))}
+             </CardContent>
           </Card>
+
+          {/* BLOQUE 6: Lista Reciente (Datos Reales) */}
+          <RecentClientsList clients={recentClients.data || []} />
+
         </div>
       </div>
     </div>
