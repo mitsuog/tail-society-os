@@ -127,17 +127,13 @@ function ClientContactPopover({ client }: { client: any }) {
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-auto py-1 px-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors group">
+                <Button variant="ghost" size="sm" className="h-auto py-0 px-2 -ml-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors group">
                     <div className="flex items-center gap-2 text-left">
-                        <div className="bg-slate-100 p-1.5 rounded-full group-hover:bg-white transition-colors">
-                            <User size={14} className="text-slate-500"/> 
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-sm font-medium leading-none truncate max-w-[150px]">{client?.full_name || 'Cliente'}</span>
-                            <span className="text-[10px] text-slate-400 font-normal flex items-center gap-1 mt-0.5">
-                                <Phone size={10}/> {rawPhone || 'N/A'}
-                            </span>
-                        </div>
+                        <User size={14} className="text-slate-400"/>
+                        <span className="text-sm font-medium leading-none truncate max-w-[150px]">{client?.full_name || 'Cliente'}</span>
+                        <span className="text-[10px] text-slate-400 font-normal flex items-center gap-0.5">
+                             • {rawPhone || 'N/A'}
+                        </span>
                     </div>
                 </Button>
             </PopoverTrigger>
@@ -445,43 +441,49 @@ function AppointmentForm({ appointment, employees, onUpdate, onClose, servicesLi
 
     return (
         <div className="flex flex-col h-full w-full bg-slate-50/50 overflow-hidden">
-            {/* HEADER MEJORADO PARA MÓVIL */}
-            <DialogHeader className="px-4 py-4 md:px-6 md:py-5 border-b border-slate-100 bg-white shrink-0">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mr-8 md:mr-0">
-                    <div className="space-y-1">
-                        <DialogTitle className="text-xl md:text-2xl font-bold text-slate-900 flex flex-wrap items-center gap-2">
-                            {pet?.name}
-                            <div className="flex items-center gap-1.5 mt-1 md:mt-0">
-                                <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200 font-medium">
-                                    {pet?.breed}
+            {/* HEADER MEJORADO Y LIMPIO PARA MÓVIL */}
+            <DialogHeader className="px-4 py-4 md:px-6 md:py-5 border-b border-slate-100 bg-white shrink-0 text-left">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-3 mr-8 md:mr-0">
+                    <div className="space-y-1.5 w-full">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <DialogTitle className="text-xl md:text-2xl font-bold text-slate-900">
+                                {pet?.name}
+                            </DialogTitle>
+                            <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200 font-medium">
+                                {pet?.breed}
+                            </Badge>
+                            {pet?.size && (
+                                <Badge variant="outline" className="text-slate-500 border-slate-300 font-normal uppercase text-[10px] tracking-wide flex items-center gap-1">
+                                    <Ruler size={10}/> {pet.size}
                                 </Badge>
-                                {pet?.size && (
-                                    <Badge variant="outline" className="text-slate-500 border-slate-300 font-normal uppercase text-[10px] tracking-wide flex items-center gap-1">
-                                        <Ruler size={10}/> {pet.size}
-                                    </Badge>
-                                )}
-                            </div>
-                        </DialogTitle>
-                        <DialogDescription className="flex items-center gap-4 text-sm text-slate-500">
+                            )}
+                        </div>
+                        
+                        {/* DATOS CLIENTE + ESTATUS EN UNA SOLA FILA FLUIDA */}
+                        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                             <ClientContactPopover client={client} />
-                        </DialogDescription>
-                    </div>
-
-                    <div className="w-full md:w-auto mt-2 md:mt-0">
-                        <Select value={status} onValueChange={handleStatusChange} disabled={loading}>
-                            <SelectTrigger className={cn("w-full md:w-[180px] h-9 text-xs font-bold border-slate-200 shadow-sm", statusInfo.bg, statusInfo.color)}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent align="end">
-                                {STATUS_OPTIONS.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                        <div className="flex items-center gap-2"><opt.icon size={12} className={opt.color}/> {opt.label}</div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            <div className="hidden md:block h-4 w-px bg-slate-200"></div>
+                            <div className="w-full md:w-auto mt-1 md:mt-0">
+                                <Select value={status} onValueChange={handleStatusChange} disabled={loading}>
+                                    <SelectTrigger className={cn("h-7 text-xs font-bold border-0 shadow-sm ring-1 ring-slate-200 w-full md:w-[140px]", statusInfo.bg, statusInfo.color)}>
+                                        <div className="flex items-center gap-2">
+                                            <statusInfo.icon size={12} className={statusInfo.color}/> 
+                                            <SelectValue />
+                                        </div>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {STATUS_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                                <div className="flex items-center gap-2"><opt.icon size={12} className={opt.color}/> {opt.label}</div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                <DialogDescription className="sr-only">Detalles de la cita</DialogDescription>
             </DialogHeader>
 
             <Tabs defaultValue="details" className="flex flex-col h-full w-full overflow-hidden">
