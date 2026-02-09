@@ -282,8 +282,15 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     fetchData();
   }, [dateState, viewState, refreshKey, supabase]);
 
+  // Funciones de apertura de modales manuales (sin dependencias de estado drag)
+  const openDetailDialog = (appt: any) => {
+      setTooltipData(null);
+      setSelectedAppt(appt);
+      setIsDetailOpen(true);
+      setContextMenu(null);
+  };
+
   // --- LOGICA UNIFICADA DE EVENTOS (MOUSE + TOUCH GLOBAL) ---
-  // Esto arregla el problema en iPhone donde el drag se "cae" si mueves el dedo rápido
   useEffect(() => {
       const handleGlobalMove = (clientX: number, clientY: number) => {
           // Lógica de RESIZE
@@ -338,7 +345,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           }
       };
 
-      const handleGlobalEnd = async () => {
+      const handleGlobalEnd = async (e?: TouchEvent | MouseEvent) => {
           // Fin RESIZE
           if (resizing) {
               const appt = localAppts.find(a => a.id === resizing.apptId);
@@ -361,14 +368,24 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           // Fin DRAG Táctil
           if (isDragging && touchDragStart) {
               const final = ghostRef.current;
+              
               if (final && isDragStarted) {
+                  // Fue un arrastre real
                   setLocalAppts(prev => prev.map(a => a.id === final.apptId ? { ...a, start_time: final.startTime.toISOString(), end_time: final.endTime.toISOString(), employee_id: viewState === 'day' ? final.colId : a.employee_id } : a));
                   updateAppointment(final.apptId, final.startTime, final.endTime, viewState === 'day' ? final.colId : undefined);
               } else if (isDragging && !isDragStarted) {
-                  // Fue un tap simple (click), no drag
+                  // FIX CRÍTICO: Fue un tap simple (click) en móvil.
+                  // 1. Encontramos la cita
                   const appt = localAppts.find(a => a.id === isDragging);
-                  if (appt) handleApptClick(appt);
+                  
+                  // 2. IMPORTANTE: Prevenimos el click nativo fantasma si estamos en touch
+                  if(e && e.cancelable) e.preventDefault(); 
+
+                  // 3. Abrimos el diálogo directamente (evitando el bloqueo por isDragging)
+                  if (appt) openDetailDialog(appt);
               }
+              
+              // Limpieza
               setIsDragging(null);
               setTouchDragStart(null);
               setIsDragStarted(false);
@@ -381,17 +398,16 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const onMouseMove = (e: MouseEvent) => {
           if(resizing) { e.preventDefault(); handleGlobalMove(e.clientX, e.clientY); }
       };
-      const onMouseUp = () => handleGlobalEnd();
+      const onMouseUp = (e: MouseEvent) => handleGlobalEnd(e);
 
       // Listeners TOUCH (Móvil)
       const onTouchMove = (e: TouchEvent) => {
           if (resizing || isDragging) {
-              // PREVENIR SCROLL EN IPHONE MIENTRAS ARRASTRAS
               if (e.cancelable) e.preventDefault(); 
               handleGlobalMove(e.touches[0].clientX, e.touches[0].clientY);
           }
       };
-      const onTouchEnd = () => handleGlobalEnd();
+      const onTouchEnd = (e: TouchEvent) => handleGlobalEnd(e);
 
       if (resizing || isDragging) {
           window.addEventListener('mousemove', onMouseMove);
@@ -433,10 +449,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
   const handleApptClick = (appt: any) => { 
       if (!isDragging && !resizing) { 
-          setTooltipData(null); 
-          setSelectedAppt(appt); 
-          setIsDetailOpen(true); 
-          setContextMenu(null);
+          openDetailDialog(appt);
       }
   };
 
@@ -522,7 +535,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const handleDragOver = (e: React.DragEvent, col: ColumnData, colIndex: number) => {
     e.preventDefault(); e.stopPropagation();
     if (!isDragging) return;
-    // ... lógica Desktop (igual) ...
     const appt = localAppts.find(a => a.id === isDragging);
     if (!appt) return;
     const rect = e.currentTarget.getBoundingClientRect();
