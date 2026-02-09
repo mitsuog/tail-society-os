@@ -5,22 +5,37 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
   Banknote, CalendarCheck, Users, TrendingUp, 
-  MapPin, Sun, Cloud, Wind, ArrowUpRight, MoreHorizontal,
-  CalendarPlus, Search
+  MapPin, Sun, ArrowUpRight, ArrowDownRight,
+  CalendarPlus, Search, ArrowRight
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
+import { startOfWeek, endOfWeek, subWeeks, format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
+// --- TIPOS ---
+interface WeeklyMetric {
+  day: string;
+  value: number;
+  heightPct: number;
+}
+
+// --- UTILS ---
+const formatMoney = (amount: number) => {
+  return new Intl.NumberFormat('es-MX', { 
+    style: 'currency', 
+    currency: 'MXN', 
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount);
+};
+
 // --- COMPONENTES VISUALES (BENTO UI) ---
 
-// 1. Widget de Clima (San Pedro Garza García)
-// Nota: En producción, esto debería conectar a una API de clima real.
 function WeatherWidget() {
   return (
     <Card className="col-span-1 md:col-span-2 lg:col-span-1 bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-none shadow-xl overflow-hidden relative group">
-      {/* Decoración de fondo */}
       <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/20 rounded-full blur-2xl group-hover:bg-white/30 transition-all duration-500"></div>
       <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-20 h-20 bg-blue-400/30 rounded-full blur-xl"></div>
 
@@ -55,10 +70,13 @@ function WeatherWidget() {
   );
 }
 
-// 2. Tarjeta KPI Estilo Bento
-function BentoMetric({ title, value, subtext, icon: Icon, className, trend }: any) {
-  return (
-    <Card className={cn("flex flex-col justify-between shadow-sm border-slate-200 hover:shadow-md transition-all duration-300 group", className)}>
+function BentoMetric({ title, value, subtext, icon: Icon, className, trend, href }: any) {
+  const Content = (
+    <Card className={cn(
+      "flex flex-col justify-between shadow-sm border-slate-200 hover:shadow-md transition-all duration-300 group h-full", 
+      href && "cursor-pointer hover:border-blue-300", 
+      className
+    )}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-slate-500">{title}</CardTitle>
         <div className={cn("p-2 rounded-full bg-slate-50 group-hover:bg-slate-100 transition-colors", 
@@ -68,26 +86,33 @@ function BentoMetric({ title, value, subtext, icon: Icon, className, trend }: an
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold text-slate-900">{value}</div>
-        <p className="text-xs text-slate-500 mt-1 flex items-center">
-          {trend === 'up' && <ArrowUpRight className="h-3 w-3 text-emerald-500 mr-1" />}
-          {subtext}
-        </p>
+        <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-slate-500 flex items-center">
+            {trend === 'up' && <ArrowUpRight className="h-3 w-3 text-emerald-500 mr-1" />}
+            {subtext}
+            </p>
+            {href && <ArrowRight className="h-3 w-3 text-slate-300 group-hover:text-blue-500 transition-colors" />}
+        </div>
       </CardContent>
     </Card>
   );
+
+  if (href) return <Link href={href}>{Content}</Link>;
+  return Content;
 }
 
-// 3. Tarjeta de Lista Rápida (Últimos Clientes)
 function RecentClientsList({ clients }: { clients: any[] }) {
   return (
     <Card className="col-span-1 md:col-span-2 lg:col-span-2 shadow-sm border-slate-200">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div>
           <CardTitle className="text-base font-bold text-slate-900">Actividad Reciente</CardTitle>
-          <p className="text-xs text-slate-500">Últimos clientes registrados o activos</p>
+          <p className="text-xs text-slate-500">Últimos clientes registrados</p>
         </div>
         <Link href="/admin/clients">
-          <Button variant="ghost" size="sm" className="text-xs h-8">Ver todos</Button>
+          <Button variant="ghost" size="sm" className="text-xs h-8 text-blue-600 hover:bg-blue-50">
+            Ir al Buscador <ArrowRight className="ml-1 h-3 w-3"/>
+          </Button>
         </Link>
       </CardHeader>
       <CardContent className="px-0">
@@ -126,59 +151,138 @@ function RecentClientsList({ clients }: { clients: any[] }) {
 export default async function DashboardPage() {
   const supabase = await createClient();
 
-  // 1. Saludo Dinámico (Monterrey Time)
+  // 1. Obtener Usuario y Rol Real
   const { data: { user } } = await supabase.auth.getUser();
-  const userName = user?.user_metadata?.first_name || user?.user_metadata?.full_name?.split(' ')[0] || 'Admin';
   
+  // Buscar datos del empleado para saber el rol y nombre
+  let role = 'employee';
+  let displayName = 'Usuario';
+
+  if (user) {
+      const { data: employeeData } = await supabase
+        .from('employees')
+        .select('role, first_name, last_name')
+        .eq('id', user.id)
+        .single();
+      
+      if (employeeData) {
+          role = employeeData.role;
+          displayName = employeeData.first_name;
+      } else {
+          displayName = user.user_metadata?.first_name || user.user_metadata?.full_name?.split(' ')[0] || 'Usuario';
+          role = user.user_metadata?.role || 'employee'; 
+      }
+  }
+
+  // Lógica de Saludo
   const hour = Number(new Date().toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/Monterrey' }));
   let greeting = 'Buenos días';
   if (hour >= 12) greeting = 'Buenas tardes';
   if (hour >= 19) greeting = 'Buenas noches';
 
-  // 2. Obtener Fechas para KPIs
-  const getMonterreyRangeISO = (date: Date) => {
-    const mtyDate = date.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' });
-    return { start: `${mtyDate}T00:00:00-06:00`, end: `${mtyDate}T23:59:59.999-06:00` };
-  };
+  // 2. Definir Permisos
+  const canViewFinancials = ['admin', 'manager', 'receptionist'].includes(role);
+
+  // 3. Fechas y Rangos
   const now = new Date();
-  const { start: todayStart, end: todayEnd } = getMonterreyRangeISO(now);
-  const currentMonthStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' }).substring(0, 7); 
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' });
+  const todayStart = `${todayStr}T00:00:00-06:00`;
+  const todayEnd = `${todayStr}T23:59:59.999-06:00`;
+  
+  const currentMonthStr = todayStr.substring(0, 7); 
   const monthStart = `${currentMonthStr}-01T00:00:00-06:00`;
 
-  // 3. Fetch de Datos (Paralelo y Optimizado)
-  const getMetrics = async (start: string, end: string) => {
+  const weekStartObj = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEndObj = endOfWeek(now, { weekStartsOn: 1 });
+  const weekStart = format(weekStartObj, "yyyy-MM-dd'T'00:00:00");
+  const weekEnd = format(weekEndObj, "yyyy-MM-dd'T'23:59:59");
+
+  const prevWeekStartObj = subWeeks(weekStartObj, 1);
+  const prevWeekEndObj = subWeeks(weekEndObj, 1);
+  const prevWeekStart = format(prevWeekStartObj, "yyyy-MM-dd'T'00:00:00");
+  const prevWeekEnd = format(prevWeekEndObj, "yyyy-MM-dd'T'23:59:59");
+
+  // 4. Fetch de Datos
+  const getSimpleMetrics = async (start: string, end: string) => {
       const { data } = await supabase.from('view_finance_appointments').select('final_price, status').gte('date', start).lte('date', end);
-      if (!data) return { revenue: 0, count: 0 };
+      if (!data) return { revenue: 0, count: 0, pending: 0 };
+      
       const valid = data.filter((a:any) => ['completed', 'attended'].includes(a.status));
+      const pending = data.filter((a:any) => !['cancelled', 'no_show', 'completed', 'attended'].includes(a.status));
+      
       return { 
           revenue: valid.reduce((acc: number, curr: any) => acc + (Number(curr.final_price) || 0), 0),
           count: valid.length,
-          pending: data.filter((a:any) => !['cancelled', 'no_show', 'completed', 'attended'].includes(a.status)).length
+          pending: pending.length
       };
   };
 
+  // AQUÍ ESTABA EL ERROR: Declarar el tipo explícito para evitar 'implicit any[]'
+  let weeklyData: WeeklyMetric[] = [];
+  let growthPercentage = 0;
+  let totalWeekRevenue = 0;
+
+  if (canViewFinancials) {
+      const { data: currentWeekRaw } = await supabase.from('view_finance_appointments')
+        .select('date, final_price, status')
+        .gte('date', weekStart)
+        .lte('date', weekEnd)
+        .in('status', ['completed', 'attended']);
+
+      const { data: prevWeekRaw } = await supabase.from('view_finance_appointments')
+        .select('final_price')
+        .gte('date', prevWeekStart)
+        .lte('date', prevWeekEnd)
+        .in('status', ['completed', 'attended']);
+
+      const daysMap = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+      const dailyTotals = new Array(7).fill(0);
+
+      currentWeekRaw?.forEach((appt: any) => {
+          const date = new Date(appt.date);
+          let dayIndex = date.getDay() - 1; 
+          if (dayIndex === -1) dayIndex = 6;
+          dailyTotals[dayIndex] += (Number(appt.final_price) || 0);
+      });
+
+      totalWeekRevenue = dailyTotals.reduce((a, b) => a + b, 0);
+      const prevWeekTotal = prevWeekRaw?.reduce((acc: number, curr: any) => acc + (Number(curr.final_price) || 0), 0) || 0;
+
+      if (prevWeekTotal > 0) {
+          growthPercentage = ((totalWeekRevenue - prevWeekTotal) / prevWeekTotal) * 100;
+      } else if (totalWeekRevenue > 0) {
+          growthPercentage = 100;
+      }
+
+      const maxVal = Math.max(...dailyTotals, 1);
+      weeklyData = dailyTotals.map((val, i) => ({
+          day: daysMap[i],
+          value: val,
+          heightPct: Math.round((val / maxVal) * 100)
+      }));
+  }
+
   const [todayMetrics, monthMetrics, recentClients] = await Promise.all([
-      getMetrics(todayStart, todayEnd),
-      getMetrics(monthStart, todayEnd),
+      getSimpleMetrics(todayStart, todayEnd),
+      getSimpleMetrics(monthStart, todayEnd),
       supabase.from('clients')
         .select('id, full_name, created_at, pets(count)')
         .order('created_at', { ascending: false })
         .limit(6)
   ]);
 
-  // --- RENDERIZADO BENTO GRID ---
   return (
     <div className="flex flex-col h-full w-full bg-slate-50/50 overflow-y-auto">
       <div className="max-w-[1600px] mx-auto w-full p-4 md:p-8 space-y-6">
         
-        {/* HEADER: Saludo y Acciones Rápidas */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-2">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-              {greeting}, {userName} <span className="inline-block animate-wave">👋</span>
+              {greeting}, {displayName} <span className="inline-block animate-wave">👋</span>
             </h1>
             <p className="text-slate-500 mt-1 text-sm md:text-base">
-              Aquí tienes el resumen operativo de hoy en San Pedro.
+              Resumen operativo en tiempo real.
             </p>
           </div>
           
@@ -201,17 +305,26 @@ export default async function DashboardPage() {
         {/* LAYOUT BENTO GRID */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           
-          {/* BLOQUE 1: Clima (Destacado) */}
+          {/* BLOQUE 1: Clima */}
           <WeatherWidget />
 
-          {/* BLOQUE 2: Ingresos Hoy */}
-          <BentoMetric 
-            title="Ingresos Hoy"
-            value={`$${todayMetrics.revenue.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-            subtext={`${todayMetrics.count} servicios pagados`}
-            icon={Banknote}
-            trend="up"
-          />
+          {/* BLOQUE 2: Ingresos Hoy (Si tiene permisos) */}
+          {canViewFinancials ? (
+              <BentoMetric 
+                title="Ingresos Hoy"
+                value={formatMoney(todayMetrics.revenue)}
+                subtext={`${todayMetrics.count} servicios pagados`}
+                icon={Banknote}
+                trend="up"
+              />
+          ) : (
+              <BentoMetric 
+                title="Servicios Hoy"
+                value={todayMetrics.count}
+                subtext="Completados y pagados"
+                icon={CalendarCheck}
+              />
+          )}
 
           {/* BLOQUE 3: Agenda Activa */}
           <BentoMetric 
@@ -222,36 +335,65 @@ export default async function DashboardPage() {
             className="border-l-4 border-l-indigo-500"
           />
 
-          {/* BLOQUE 4: Ingresos Mes */}
-          <BentoMetric 
-            title="Ingresos Mes"
-            value={`$${monthMetrics.revenue.toLocaleString('es-MX', { minimumFractionDigits: 0 })}`}
-            subtext="Acumulado bruto"
-            icon={TrendingUp}
-          />
+          {/* BLOQUE 4: Clientes / Ingresos Mes */}
+          {canViewFinancials ? (
+              <BentoMetric 
+                title="Ingresos Mes"
+                value={formatMoney(monthMetrics.revenue)}
+                subtext="Acumulado mensual"
+                icon={TrendingUp}
+              />
+          ) : (
+              <BentoMetric 
+                title="Buscar Clientes"
+                value="Directorio"
+                subtext="Ir al buscador avanzado"
+                icon={Users}
+                href="/admin/clients"
+              />
+          )}
 
           {/* FILA 2 */}
 
-          {/* BLOQUE 5: Gráfico Simple (Simulado con CSS por simplicidad en Server Component) */}
-          <Card className="col-span-1 md:col-span-2 shadow-sm border-slate-200 flex flex-col justify-between">
-             <CardHeader>
-                <CardTitle className="text-base font-bold text-slate-900">Rendimiento Semanal</CardTitle>
-             </CardHeader>
-             <CardContent className="h-40 flex items-end justify-between gap-2 px-6 pb-6">
-                {/* Barras simuladas con Tailwind para no depender de librerías de gráficos complejas en este snippet */}
-                {[45, 60, 35, 70, 85, 55, 65].map((h, i) => (
-                    <div key={i} className="w-full bg-slate-100 rounded-t-sm relative group overflow-hidden" style={{ height: '100%' }}>
-                        <div 
-                            className="absolute bottom-0 w-full bg-slate-900 rounded-t-sm transition-all duration-500 group-hover:bg-blue-600" 
-                            style={{ height: `${h}%` }}
-                        ></div>
+          {/* BLOQUE 5: Gráfico Semanal (SOLO ADMIN/MANAGER/RECEPTION) */}
+          {canViewFinancials && (
+            <Card className="col-span-1 md:col-span-2 shadow-sm border-slate-200 flex flex-col justify-between overflow-hidden">
+                <CardHeader className="flex flex-row items-start justify-between pb-2">
+                    <div>
+                        <CardTitle className="text-base font-bold text-slate-900">Rendimiento Semanal</CardTitle>
+                        <p className="text-xs text-slate-500">Facturación acumulada: <span className="font-bold text-slate-900">{formatMoney(totalWeekRevenue)}</span></p>
                     </div>
-                ))}
-             </CardContent>
-          </Card>
+                    <div className={cn("px-2 py-1 rounded text-xs font-bold flex items-center", 
+                        growthPercentage >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                    )}>
+                        {growthPercentage >= 0 ? <ArrowUpRight size={14} className="mr-1"/> : <ArrowDownRight size={14} className="mr-1"/>}
+                        {Math.abs(growthPercentage).toFixed(1)}% vs semana ant.
+                    </div>
+                </CardHeader>
+                <CardContent className="h-48 flex items-end justify-between gap-3 px-6 pb-6 pt-2">
+                    {weeklyData.map((d, i) => (
+                        <div key={i} className="flex flex-col items-center justify-end w-full h-full group gap-2">
+                            <div className="w-full bg-slate-100 rounded-t-md relative overflow-hidden h-full flex items-end">
+                                <div 
+                                    className="w-full bg-slate-900 rounded-t-md transition-all duration-1000 ease-out group-hover:bg-blue-600" 
+                                    style={{ height: `${d.heightPct}%` }}
+                                >
+                                    <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] px-2 py-1 rounded whitespace-nowrap transition-opacity pointer-events-none z-10">
+                                        {formatMoney(d.value)}
+                                    </div>
+                                </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{d.day}</span>
+                        </div>
+                    ))}
+                </CardContent>
+            </Card>
+          )}
 
-          {/* BLOQUE 6: Lista Reciente (Datos Reales) */}
-          <RecentClientsList clients={recentClients.data || []} />
+          {/* BLOQUE 6: Lista Reciente (Ocupa el espacio restante) */}
+          <div className={cn("col-span-1 lg:col-span-2", !canViewFinancials && "lg:col-span-4")}>
+             <RecentClientsList clients={recentClients.data || []} />
+          </div>
 
         </div>
       </div>
