@@ -5,7 +5,7 @@ import {
   Banknote, CalendarCheck, Users, TrendingUp, 
   MapPin, CloudRain, Thermometer, ArrowUpRight, Scissors, Droplets, 
   Plus, CreditCard, LogIn, Clock, CheckCircle2, 
-  AlertTriangle, Crown
+  AlertTriangle, Crown, PawPrint
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
-import { parseISO, getHours } from 'date-fns';
+import { parseISO, format, isPast } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 // --- TIPO DE DATOS ---
 export type DashboardData = {
@@ -209,116 +210,87 @@ const TopBreedsWidget = ({ data }: { data: DashboardData }) => {
 };
 
 // ----------------------------------------------------------------------
-// 6. AGENDA COMBINADA (OPERACIONES + LÍNEA DE TIEMPO)
+// 6. AGENDA SIMPLE (LISTA VERTICAL + STATS) - CORREGIDO
 // ----------------------------------------------------------------------
-const AgendaCombinedWidget = ({ data }: { data: DashboardData }) => {
+const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
     const ops = data.operations;
-    const items = data.agenda?.items || []; // Accedemos a los items de la agenda
-    const maxCap = Math.max(ops.total, 1); 
-
-    // Agrupamos citas por hora para la línea de tiempo
-    const hours = Array.from({ length: 10 }, (_, i) => i + 10); // 10:00 AM a 7:00 PM (19:00)
-    const apptsByHour: Record<number, any[]> = {};
-    
-    items.forEach((appt) => {
-        if (appt.start_time) {
-            const h = getHours(parseISO(appt.start_time));
-            if (!apptsByHour[h]) apptsByHour[h] = [];
-            apptsByHour[h].push(appt);
-        }
-    });
+    const items = data.agenda?.items || [];
+    // Ordenar citas por hora
+    const sortedItems = [...items].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
     return (
         <Card className="h-full shadow-sm border-slate-200 flex flex-col bg-white overflow-hidden min-h-[350px]">
-            {/* ENCABEZADO */}
+            {/* Header con Resumen */}
             <CardHeader className="p-4 pb-2 border-b border-slate-50 bg-slate-50/50 flex flex-row items-center justify-between shrink-0">
-                <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <CalendarCheck className="h-4 w-4 text-slate-500"/> Agenda del Día
-                </CardTitle>
-                <div className="flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                    </span>
-                    <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">{ops.total} Activos</span>
+                <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-blue-100 rounded text-blue-600"><CalendarCheck size={16}/></div>
+                    <CardTitle className="text-sm font-bold text-slate-900">Agenda del Día</CardTitle>
                 </div>
+                <Badge variant="secondary" className="font-mono text-xs">{items.length} Citas</Badge>
             </CardHeader>
 
-            <CardContent className="p-0 flex-1 flex flex-col h-full overflow-hidden">
+            {/* Barra de Progreso General */}
+            <div className="px-4 pt-3 pb-1 bg-white shrink-0">
+                <div className="flex justify-between text-[10px] text-slate-500 mb-1 font-medium uppercase tracking-wide">
+                    <span>Progreso del Día</span>
+                    <span>{ops.ready} / {ops.total || 1} Finalizados</span>
+                </div>
+                <Progress value={(ops.ready / Math.max(ops.total, 1)) * 100} className="h-1.5 bg-slate-100" indicatorColor="bg-emerald-500"/>
                 
-                {/* 1. SECCIÓN DE ESTADÍSTICAS (FIJA ARRIBA) */}
-                <div className="p-4 border-b border-slate-100 bg-white z-10 shrink-0">
-                    <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div className="space-y-1.5">
-                            <div className="flex justify-between text-xs font-medium items-center">
-                                <span className="flex items-center gap-1.5 text-slate-600"><Droplets size={12} className="text-cyan-500"/> Baño</span>
-                                <span className="text-slate-900 font-bold bg-slate-100 px-1.5 rounded text-[10px]">{ops.bathing}</span>
-                            </div>
-                            <Progress value={(ops.bathing / maxCap) * 100} className="h-1.5 bg-slate-100" indicatorColor="bg-cyan-500" />
-                        </div>
-                        <div className="space-y-1.5">
-                            <div className="flex justify-between text-xs font-medium items-center">
-                                <span className="flex items-center gap-1.5 text-slate-600"><Scissors size={12} className="text-purple-500"/> Corte</span>
-                                <span className="text-slate-900 font-bold bg-slate-100 px-1.5 rounded text-[10px]">{ops.cutting}</span>
-                            </div>
-                            <Progress value={(ops.cutting / maxCap) * 100} className="h-1.5 bg-slate-100" indicatorColor="bg-purple-500" />
-                        </div>
+                {/* Mini Stats */}
+                <div className="flex gap-3 mt-3 pb-2 border-b border-slate-50">
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-600">
+                        <div className="w-2 h-2 rounded-full bg-cyan-500"></div> {ops.bathing} Baño
                     </div>
-                    <div className="flex gap-2">
-                        <Badge variant="outline" className="text-[10px] font-normal text-amber-600 bg-amber-50 border-amber-100 flex gap-1">
-                            <Clock size={10}/> {ops.waiting} en espera
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px] font-normal text-emerald-600 bg-emerald-50 border-emerald-100 flex gap-1">
-                            <CheckCircle2 size={10}/> {ops.ready} listos
-                        </Badge>
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-600">
+                        <div className="w-2 h-2 rounded-full bg-purple-500"></div> {ops.cutting} Corte
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-600">
+                        <div className="w-2 h-2 rounded-full bg-amber-500"></div> {ops.waiting} Espera
                     </div>
                 </div>
+            </div>
 
-                {/* 2. SECCIÓN DE LÍNEA DE TIEMPO (SCROLLABLE) */}
-                <div className="flex-1 overflow-y-auto bg-slate-50/30">
+            {/* Lista Scrollable */}
+            <CardContent className="p-0 flex-1 overflow-y-auto bg-white relative">
+                {sortedItems.length > 0 ? (
                     <div className="divide-y divide-slate-100">
-                        {hours.map((hour) => {
-                            const slotItems = apptsByHour[hour] || [];
-                            const isPast = hour < new Date().getHours();
+                        {sortedItems.map((appt) => {
+                            const date = parseISO(appt.start_time);
+                            const isDone = appt.status === 'completed';
+                            const isCut = appt.service_category?.includes('corte');
                             
                             return (
-                                <div key={hour} className={cn("flex min-h-[45px] transition-colors", isPast ? "bg-slate-50/50 opacity-60" : "hover:bg-white")}>
-                                    {/* HORA */}
-                                    <div className="w-14 border-r border-slate-100 flex items-start justify-center pt-3 text-[10px] font-mono font-medium text-slate-400 shrink-0">
-                                        {hour}:00
+                                <div key={appt.id} className={cn("flex items-center gap-3 p-3 hover:bg-slate-50/80 transition-colors group", isDone && "opacity-60 grayscale bg-slate-50/30")}>
+                                    {/* Hora */}
+                                    <div className="flex flex-col items-center justify-center w-12 shrink-0 border-r border-slate-100 pr-3">
+                                        <span className="text-xs font-bold text-slate-700">{format(date, 'HH:mm')}</span>
+                                        <span className="text-[9px] text-slate-400 font-medium uppercase">{format(date, 'a', { locale: es })}</span>
                                     </div>
                                     
-                                    {/* CITAS */}
-                                    <div className="flex-1 p-2 flex flex-wrap gap-2 items-start content-start">
-                                        {slotItems.length > 0 ? (
-                                            slotItems.map((apt) => (
-                                                <div key={apt.id} className={cn(
-                                                    "px-2 py-1 rounded text-[10px] font-bold border shadow-sm flex items-center gap-1 animate-in zoom-in-95 duration-300", 
-                                                    (apt.service_category?.includes('corte')) 
-                                                        ? "bg-purple-50 text-purple-700 border-purple-200" 
-                                                        : "bg-cyan-50 text-cyan-700 border-cyan-200",
-                                                    apt.status === 'completed' && "opacity-50 grayscale decoration-slate-400"
-                                                )}>
-                                                    {apt.pet_name}
-                                                    {apt.status === 'completed' && <CheckCircle2 size={8} />}
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <div className="w-full h-full min-h-[20px]"></div> 
-                                        )}
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <p className="text-xs font-bold text-slate-800 truncate">{appt.pet_name}</p>
+                                            {isDone && <CheckCircle2 size={12} className="text-emerald-500"/>}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className={cn("text-[9px] h-4 px-1 rounded border-0", isCut ? "bg-purple-50 text-purple-700" : "bg-cyan-50 text-cyan-700")}>
+                                                {isCut ? <Scissors size={8} className="mr-1"/> : <Droplets size={8} className="mr-1"/>}
+                                                {appt.service_name}
+                                            </Badge>
+                                        </div>
                                     </div>
                                 </div>
                             );
                         })}
-                        {/* Mensaje final si no hay nada */}
-                        {items.length === 0 && (
-                            <div className="p-8 text-center text-xs text-slate-400">
-                                No hay citas registradas hoy.
-                            </div>
-                        )}
                     </div>
-                </div>
-
+                ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 p-6 text-center">
+                        <div className="bg-slate-50 p-3 rounded-full mb-2"><PawPrint size={20} className="opacity-30"/></div>
+                        <p className="text-xs">No hay citas programadas hoy</p>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
@@ -372,19 +344,25 @@ const StaffStatusWidget = ({ data }: { data: DashboardData }) => {
 }
 
 // ----------------------------------------------------------------------
-// CATALOGO DE WIDGETS
+// CATALOGO DE WIDGETS (AJUSTADO PARA NO DEJAR HUÉRFANOS)
 // ----------------------------------------------------------------------
 export const WIDGET_CATALOG = {
+  // Fila 1: Finanzas + Clima + Acciones (Total 3 col en desktop, 1 en móvil)
   revenue_zettle: { id: 'revenue_zettle', component: RevenueZettleWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
   weather: { id: 'weather', component: WeatherWidget, roles: ['all'], defaultColSpan: 1 },
   quick_actions: { id: 'quick_actions', component: QuickActionsWidget, roles: ['all'], defaultColSpan: 1 },
-  agenda_combined: { id: 'agenda_combined', component: AgendaCombinedWidget, roles: ['all'], defaultColSpan: 2 },
+  
+  // Fila 2: Agenda (Colspan 2) + Staff (Colspan 1) -> Total 3
+  agenda_combined: { id: 'agenda_combined', component: AgendaSimpleWidget, roles: ['all'], defaultColSpan: 2 }, // AHORA USA EL WIDGET SIMPLE
   staff_status: { id: 'staff_status', component: StaffStatusWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
+  
+  // Fila 3: Watchlist + Top Mascotas (Ajustados a 1.5 cada uno si usaras grid de 3, pero aquí forzamos 1 y 2 o reordenamos)
   retention_risk: { id: 'retention_risk', component: RetentionWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
-  top_breeds: { id: 'top_breeds', component: TopBreedsWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
-  // Compatibility fallbacks
+  top_breeds: { id: 'top_breeds', component: TopBreedsWidget, roles: ['admin', 'manager'], defaultColSpan: 2 }, // Le damos más espacio al Top para cerrar la fila
+  
+  // Mapeos de compatibilidad (para que no se rompa si la DB tiene nombres viejos)
   stats_overview: { id: 'stats_overview', component: RevenueZettleWidget, roles: ['admin'], defaultColSpan: 1 },
-  live_operations: { id: 'live_operations', component: AgendaCombinedWidget, roles: ['all'], defaultColSpan: 2 },
+  live_operations: { id: 'live_operations', component: AgendaSimpleWidget, roles: ['all'], defaultColSpan: 2 },
 };
 
 export type WidgetId = keyof typeof WIDGET_CATALOG;
