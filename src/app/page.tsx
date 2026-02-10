@@ -17,22 +17,24 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   // ─────────────────────────────────────────────
-  // 1. ROL Y NOMBRE (desde user_roles para el nombre de pila)
+  // 1. ROL Y NOMBRE (desde user_roles)
   // ─────────────────────────────────────────────
   let role = 'employee';
   let displayName = 'Usuario';
 
   if (user) {
-    // Primero intentar user_roles (nombre de pila preferido)
+    // user_roles: PK es "id", nombre es "full_name"
     const { data: userRole } = await supabase
       .from('user_roles')
-      .select('role, first_name')
-      .eq('user_id', user.id)
+      .select('role, full_name')
+      .eq('id', user.id)
       .single();
 
     if (userRole) {
       role = userRole.role || 'employee';
-      displayName = userRole.first_name || 'Usuario';
+      // Extraer nombre de pila del full_name
+      const firstName = userRole.full_name?.split(' ')[0];
+      displayName = firstName || 'Usuario';
     } else {
       // Fallback a employees si no existe en user_roles
       const { data: emp } = await supabase
@@ -156,18 +158,18 @@ export default async function DashboardPage() {
     };
   };
 
-  // B. AGENDA — Consulta desde appointments (filtros directos, sin problemas PostgREST)
+  // B. AGENDA — Igual que CalendarBoard: consultar appointment_services directo
+  //    (appointments tiene "date", NO "start_time"; el start_time vive en appointment_services)
   const getAgendaData = async () => {
     const { data, error } = await supabase
-      .from('appointments')
+      .from('appointment_services')
       .select(`
-        id, start_time, status,
-        pets (name),
-        appointment_services (id, service_name, category, services (name, category))
+        id, start_time,
+        service:services (name, category),
+        appointment:appointments (id, status, pet:pets (name))
       `)
       .gte('start_time', todayStartISO)
-      .lte('start_time', todayEndISO)
-      .neq('status', 'cancelled');
+      .lte('start_time', todayEndISO);
 
     if (error) {
       console.error('[Dashboard] Error agenda:', error.message);
@@ -175,40 +177,26 @@ export default async function DashboardPage() {
     }
     if (!data) return [];
 
-    // Aplanar: cada appointment_service se convierte en un item de agenda
-    const items: any[] = [];
-    for (const appt of data) {
-      const petsData = appt.pets as any;
-      const petName = Array.isArray(petsData) ? petsData[0]?.name : petsData?.name;
-      const services = appt.appointment_services as any[];
+    return data
+      .filter((item: any) => {
+        const status = item.appointment?.status;
+        return status && status !== 'cancelled';
+      })
+      .map((item: any) => {
+        const petData = item.appointment?.pet as any;
+        const petName = Array.isArray(petData) ? petData[0]?.name : petData?.name;
+        const svcName = item.service?.name || 'Servicio';
+        const svcCat = (item.service?.category || 'bath').toLowerCase();
 
-      if (services && services.length > 0) {
-        for (const svc of services) {
-          const svcName = svc.service_name || svc.services?.name || 'Servicio';
-          const svcCat = (svc.category || svc.services?.category || 'baño').toLowerCase();
-          items.push({
-            id: svc.id,
-            start_time: appt.start_time,
-            pet_name: petName || 'Mascota',
-            status: appt.status,
-            service_name: svcName,
-            service_category: svcCat,
-          });
-        }
-      } else {
-        // Cita sin servicios desglosados — mostrar como genérica
-        items.push({
-          id: appt.id,
-          start_time: appt.start_time,
+        return {
+          id: item.id,
+          start_time: item.start_time,
           pet_name: petName || 'Mascota',
-          status: appt.status,
-          service_name: 'Servicio',
-          service_category: 'baño',
-        });
-      }
-    }
-
-    return items;
+          status: item.appointment?.status || 'scheduled',
+          service_name: svcName,
+          service_category: svcCat,
+        };
+      });
   };
 
   // C. RETENCIÓN
