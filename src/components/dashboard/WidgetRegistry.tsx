@@ -14,8 +14,8 @@ import { cn } from "@/lib/utils";
 import { parseISO, getHours } from 'date-fns';
 
 // --- DEFINICIONES DE TIPOS PARA LOS DATOS ---
-// Esto asegura que TypeScript sepa qué esperar en "data"
-type DashboardData = {
+// CORRECCIÓN: Agregado 'export' para que DraggableDashboard pueda usarlo
+export type DashboardData = {
   today: { revenue: number; count: number; pending: number; formattedRevenue: string };
   month: { revenue: number; formattedRevenue: string };
   recentClients: any[];
@@ -25,7 +25,7 @@ type DashboardData = {
 
 // --- COMPONENTES VISUALES ---
 
-// 1. Widget de Clima (Estático/Simulado para San Pedro)
+// 1. Widget de Clima
 const WeatherWidget = () => (
   <Card className="h-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-none shadow-md overflow-hidden relative group min-h-[160px]">
     <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/20 rounded-full blur-2xl group-hover:bg-white/30 transition-all duration-500"></div>
@@ -49,7 +49,7 @@ const WeatherWidget = () => (
   </Card>
 );
 
-// 2. Métrica Genérica (Reutilizable)
+// 2. Métrica Genérica
 const BentoMetric = ({ title, value, subtext, icon: Icon, trend, colorClass }: any) => (
   <Card className="h-full flex flex-col justify-between shadow-sm border-slate-200 hover:shadow-md transition-all duration-300 group">
     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-5">
@@ -68,7 +68,7 @@ const BentoMetric = ({ title, value, subtext, icon: Icon, trend, colorClass }: a
   </Card>
 );
 
-// 3. Agenda Visual (Timeline de Bolitas)
+// 3. Agenda Visual
 const AgendaWidget = ({ data }: { data: DashboardData }) => {
   const appointments = data.agenda || [];
   const hours = Array.from({ length: 10 }, (_, i) => i + 9); // 9:00 a 18:00
@@ -164,7 +164,7 @@ const RecentClientsWidget = ({ data }: { data: DashboardData }) => {
   );
 };
 
-// 5. Gráfico Semanal (Para Admins)
+// 5. Gráfico Semanal
 const WeeklyRevenueWidget = ({ data }: { data: DashboardData }) => {
   const { weeklyData, growthPercentage, formattedRevenue } = data.weekly;
   return (
@@ -199,17 +199,13 @@ const WeeklyRevenueWidget = ({ data }: { data: DashboardData }) => {
 };
 
 // --- CATÁLOGO PRINCIPAL ---
-// Aquí mapeamos los IDs del dashboard a los componentes reales con datos reales.
-
 export const WIDGET_CATALOG = {
-  // 1. Clima
   weather: {
     id: 'weather',
     component: WeatherWidget,
     roles: ['all'],
     defaultColSpan: 1,
   },
-  // 2. Ingresos Hoy
   revenue_today: {
     id: 'revenue_today',
     component: ({ data }: { data: DashboardData }) => (
@@ -225,7 +221,6 @@ export const WIDGET_CATALOG = {
     roles: ['admin', 'manager', 'receptionist'],
     defaultColSpan: 1,
   },
-  // 3. Agenda/Citas Pendientes
   appointments_status: {
     id: 'appointments_status',
     component: ({ data }: { data: DashboardData }) => (
@@ -240,7 +235,6 @@ export const WIDGET_CATALOG = {
     roles: ['all'],
     defaultColSpan: 1,
   },
-  // 4. Ingresos Mes
   revenue_month: {
     id: 'revenue_month',
     component: ({ data }: { data: DashboardData }) => (
@@ -255,21 +249,18 @@ export const WIDGET_CATALOG = {
     roles: ['admin', 'manager'],
     defaultColSpan: 1,
   },
-  // 5. Agenda Visual (Timeline)
   agenda_timeline: {
     id: 'agenda_timeline',
     component: AgendaWidget,
     roles: ['all'],
-    defaultColSpan: 2, // Ocupa 2 espacios
+    defaultColSpan: 2,
   },
-  // 6. Gráfica Semanal
   weekly_chart: {
     id: 'weekly_chart',
     component: WeeklyRevenueWidget,
     roles: ['admin', 'manager'],
     defaultColSpan: 2,
   },
-  // 7. Lista Clientes
   clients_recent: {
     id: 'clients_recent',
     component: RecentClientsWidget,
