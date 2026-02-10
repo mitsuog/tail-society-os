@@ -347,20 +347,18 @@ const StaffStatusWidget = ({ data }: { data: DashboardData }) => {
 // CATALOGO DE WIDGETS (AJUSTADO PARA NO DEJAR HUÉRFANOS)
 // ----------------------------------------------------------------------
 export const WIDGET_CATALOG = {
-  // Fila 1: Finanzas + Clima + Acciones (Total 3 col en desktop, 1 en móvil)
   revenue_zettle: { id: 'revenue_zettle', component: RevenueZettleWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
   weather: { id: 'weather', component: WeatherWidget, roles: ['all'], defaultColSpan: 1 },
   quick_actions: { id: 'quick_actions', component: QuickActionsWidget, roles: ['all'], defaultColSpan: 1 },
   
-  // Fila 2: Agenda (Colspan 2) + Staff (Colspan 1) -> Total 3
-  agenda_combined: { id: 'agenda_combined', component: AgendaSimpleWidget, roles: ['all'], defaultColSpan: 2 }, // AHORA USA EL WIDGET SIMPLE
+  // AQUI ESTA LA CLAVE: Usar AgendaSimpleWidget
+  agenda_combined: { id: 'agenda_combined', component: AgendaSimpleWidget, roles: ['all'], defaultColSpan: 2 },
+  
   staff_status: { id: 'staff_status', component: StaffStatusWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
-  
-  // Fila 3: Watchlist + Top Mascotas (Ajustados a 1.5 cada uno si usaras grid de 3, pero aquí forzamos 1 y 2 o reordenamos)
   retention_risk: { id: 'retention_risk', component: RetentionWidget, roles: ['admin', 'manager'], defaultColSpan: 1 },
-  top_breeds: { id: 'top_breeds', component: TopBreedsWidget, roles: ['admin', 'manager'], defaultColSpan: 2 }, // Le damos más espacio al Top para cerrar la fila
+  top_breeds: { id: 'top_breeds', component: TopBreedsWidget, roles: ['admin', 'manager'], defaultColSpan: 2 },
   
-  // Mapeos de compatibilidad (para que no se rompa si la DB tiene nombres viejos)
+  // COMPATIBILIDAD (No se usa en layout nuevo, pero evita error si existía en DB)
   stats_overview: { id: 'stats_overview', component: RevenueZettleWidget, roles: ['admin'], defaultColSpan: 1 },
   live_operations: { id: 'live_operations', component: AgendaSimpleWidget, roles: ['all'], defaultColSpan: 2 },
 };
