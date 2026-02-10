@@ -1,8 +1,8 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { 
-  Phone, MapPin, Mail, Clock, Plus, 
-  Filter, XCircle, History, FileSignature, FileText, CalendarPlus, CheckCircle, AlertCircle, Pencil, Eye
+  Phone, MapPin, Mail, Clock, 
+  Filter, XCircle, History, FileSignature, FileText, CalendarPlus, AlertCircle, Pencil, Eye
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,12 +13,9 @@ import SignatureLinkButton from '@/components/SignatureLinkButton';
 import PetCard from '@/components/PetCard';
 import BackButton from '@/components/BackButton';
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
-import { cn } from "@/lib/utils";
 
-// --- IMPORTANTE: Evita que Next.js guarde caché del estatus de la firma ---
 export const dynamic = 'force-dynamic';
 
-// --- INTERFACES ---
 interface Pet {
   id: string;
   client_id: string;
@@ -30,7 +27,7 @@ interface Pet {
   birth_date: string | null;
   photo_url: string | null;
   status: string; 
-  waiver_signed: boolean; // Campo clave para la firma
+  waiver_signed: boolean;
   is_vaccined: boolean;
   has_allergies: boolean;
   has_illness: boolean;
@@ -57,7 +54,7 @@ interface Appointment {
   secondary_services_text: string | null;
   pet_id: string;
   status: string;
-  pet: { name: string };
+  pet: { name: string } | null;
 }
 
 export default async function ClientDetail({ 
@@ -72,8 +69,24 @@ export default async function ClientDetail({
   const supabase = await createClient();
 
   // 1. CARGA DE CLIENTE
-  const { data: client } = await supabase.from('clients').select('*').eq('id', id).single();
-  if (!client) return <div className="p-10 text-center text-slate-500">Cliente no encontrado</div>;
+  // Usamos 'rawClient' para diferenciar los datos crudos
+  const { data: rawClient } = await supabase.from('clients').select('*').eq('id', id).single();
+  
+  if (!rawClient) {
+    return (
+        <div className="flex flex-col items-center justify-center h-screen text-slate-500 gap-4">
+            <p>Cliente no encontrado</p>
+            <Link href="/admin/clients"><Button variant="outline">Volver al Directorio</Button></Link>
+        </div>
+    );
+  }
+
+  // --- SOLUCIÓN: BLINDAJE DE DATOS ---
+  // Creamos un objeto cliente seguro. Si internal_tags no es array, ponemos [].
+  const client = {
+      ...rawClient,
+      internal_tags: Array.isArray(rawClient.internal_tags) ? rawClient.internal_tags : []
+  };
 
   // 2. CARGA DE MASCOTAS
   const { data: rawPets } = await supabase
@@ -82,18 +95,16 @@ export default async function ClientDetail({
     .eq('client_id', id)
     .order('created_at', { ascending: true });
     
-  const pets = rawPets as Pet[] | null;
+  const pets = (rawPets || []) as Pet[];
 
   // --- LÓGICA DE FIRMA ---
-  const hasPets = pets && pets.length > 0;
-  // Firmado completo: Si tiene mascotas y TODAS tienen la firma true
+  const hasPets = pets.length > 0;
   const allSigned = hasPets && pets.every(p => p.waiver_signed);
-  // Firma parcial: Si solo algunas tienen la firma
   const someSigned = hasPets && pets.some(p => p.waiver_signed) && !allSigned;
 
   // 3. CARGA DE CITAS
   let allAppointments: Appointment[] = [];
-  const petIds = pets?.map(p => p.id) || [];
+  const petIds = pets.map(p => p.id);
   
   if (petIds.length > 0) {
     const { data: appts } = await supabase
@@ -102,7 +113,7 @@ export default async function ClientDetail({
       .in('pet_id', petIds)
       .order('date', { ascending: false });
     
-    if (appts) allAppointments = appts as any[];
+    if (appts) allAppointments = appts as unknown as Appointment[];
   }
 
   // Filtrado de citas
@@ -110,13 +121,15 @@ export default async function ClientDetail({
     ? allAppointments.filter(a => a.pet_id === pet_id)
     : allAppointments;
 
-  const activePetName = pet_id ? pets?.find(p => p.id === pet_id)?.name : null;
+  const activePetName = pet_id ? pets.find(p => p.id === pet_id)?.name : null;
 
   // Antigüedad del Cliente
   let clientSinceDate = new Date(client.created_at);
   if (allAppointments.length > 0) {
-    const oldestDate = new Date(allAppointments[allAppointments.length - 1].date);
-    if (oldestDate < clientSinceDate) clientSinceDate = oldestDate;
+    const lastApptDate = new Date(allAppointments[allAppointments.length - 1].date);
+    if (!isNaN(lastApptDate.getTime()) && lastApptDate < clientSinceDate) {
+        clientSinceDate = lastApptDate;
+    }
   }
 
   return (
@@ -134,7 +147,6 @@ export default async function ClientDetail({
                  Desde {clientSinceDate.getFullYear()}
               </Badge>
 
-              {/* BADGES DE ESTADO DE FIRMA */}
               {allSigned ? (
                   <Badge className="bg-blue-50 text-blue-700 border-blue-200 gap-1 text-[10px] h-5 hover:bg-blue-100 cursor-default">
                       <FileSignature size={10}/> Contrato Vigente
@@ -169,12 +181,8 @@ export default async function ClientDetail({
               }
            />
            
-           {/* GRUPO DE ACCIONES DE CONTRATO */}
            <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-               {/* 1. Botón para copiar link */}
                <SignatureLinkButton clientId={client.id} isSigned={allSigned} />
-               
-               {/* 2. Botón para ver documento (Solo si hay mascotas) */}
                {hasPets && (
                    <Link href={`/waiver/${client.id}?mode=view`} target="_blank">
                        <Button variant="ghost" size="sm" className="h-8 text-xs text-slate-600 hover:text-blue-700 hover:bg-white px-3 border-l border-slate-200 rounded-l-none" title="Ver Documento Firmado">
@@ -203,18 +211,21 @@ export default async function ClientDetail({
         {/* COLUMNA IZQUIERDA: PERFIL Y MASCOTAS (3/12) */}
         <div className="lg:col-span-3 space-y-4">
           
-          {/* Tarjeta de Notas */}
-          {(client.notes || client.internal_tags) && (
+          {/* Tarjeta de Notas y Etiquetas */}
+          {(client.notes || client.internal_tags.length > 0) && (
             <div className="bg-white rounded-lg border border-slate-200 p-3 text-xs space-y-2 shadow-sm">
-              {client.internal_tags && client.internal_tags.length > 0 && (
+              
+              {/* RENDERIZADO SEGURO DE TAGS */}
+              {client.internal_tags.length > 0 && (
                  <div className="flex flex-wrap gap-1">
                     {client.internal_tags.map((tag: string) => (
-                        <span key={tag} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-1">
-                            <Filter size={10}/> {tag}
+                        <span key={tag} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-1 capitalize">
+                            <Filter size={10}/> {tag.replace('_', ' ')}
                         </span>
                     ))}
                  </div>
               )}
+
               {client.notes && (
                  <div className="bg-slate-50 text-slate-600 p-2 rounded border border-slate-100 leading-relaxed italic">
                    {client.notes}
@@ -226,21 +237,20 @@ export default async function ClientDetail({
           {/* Lista de Mascotas */}
           <div className="space-y-2">
             <div className="flex justify-between items-center px-1">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mascotas ({pets?.length})</h3>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mascotas ({pets.length})</h3>
             </div>
             
             <div className="flex flex-col gap-2">
-              {pets?.map(pet => (
+              {pets.map(pet => (
                 <PetCard 
                   key={pet.id} 
                   pet={pet} 
-                  /* CORRECCIÓN: Props requeridas por PetCard */
                   clientId={client.id}
                   isActive={pet_id === pet.id}
                 />
               ))}
               
-              {(!pets || pets.length === 0) && (
+              {pets.length === 0 && (
                  <div className="text-center p-6 border border-dashed border-slate-200 rounded-lg bg-slate-50">
                     <p className="text-xs text-slate-400">Sin mascotas registradas</p>
                  </div>
@@ -274,48 +284,48 @@ export default async function ClientDetail({
               <div className="flex-1 overflow-auto p-0">
                 {displayedAppointments.length > 0 ? (
                   <div className="divide-y divide-slate-100">
-                     {displayedAppointments.map((appt) => (
-                       <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 hover:bg-slate-50 transition-colors group">
-                         
-                         {/* Fecha y Mascota */}
-                         <div className="sm:w-[150px] shrink-0">
-                            <div className="flex items-center gap-2 mb-1">
-                               <Badge variant="outline" className="text-[10px] h-4 px-1 rounded-sm border-slate-300 text-slate-500 font-normal bg-white">
-                                 {appt.pet?.name || 'Mascota'}
-                               </Badge>
-                            </div>
-                            <p className="text-sm font-bold text-slate-800 capitalize">
-                              {new Date(appt.date).toLocaleDateString('es-MX', {day: 'numeric', month: 'short', year: '2-digit'})}
-                            </p>
-                            <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                              <Clock size={10}/> {new Date(appt.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                            </p>
-                         </div>
+                      {displayedAppointments.map((appt) => (
+                        <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 hover:bg-slate-50 transition-colors group">
+                          
+                          {/* Fecha y Mascota */}
+                          <div className="sm:w-[150px] shrink-0">
+                             <div className="flex items-center gap-2 mb-1">
+                                <Badge variant="outline" className="text-[10px] h-4 px-1 rounded-sm border-slate-300 text-slate-500 font-normal bg-white">
+                                  {appt.pet?.name || 'Mascota'}
+                                </Badge>
+                             </div>
+                             <p className="text-sm font-bold text-slate-800 capitalize">
+                               {new Date(appt.date).toLocaleDateString('es-MX', {day: 'numeric', month: 'short', year: '2-digit'})}
+                             </p>
+                             <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                               <Clock size={10}/> {new Date(appt.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                             </p>
+                          </div>
 
-                         {/* Descripción */}
-                         <div className="flex-1 min-w-0">
-                            <p className="text-sm text-slate-700 font-medium truncate group-hover:whitespace-normal group-hover:overflow-visible transition-all">
-                              {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
-                            </p>
-                            {appt.secondary_services_text && (
-                              <p className="text-xs text-slate-400 truncate mt-0.5">{appt.secondary_services_text}</p>
-                            )}
-                         </div>
+                          {/* Descripción */}
+                          <div className="flex-1 min-w-0">
+                             <p className="text-sm text-slate-700 font-medium truncate group-hover:whitespace-normal group-hover:overflow-visible transition-all">
+                               {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
+                             </p>
+                             {appt.secondary_services_text && (
+                               <p className="text-xs text-slate-400 truncate mt-0.5">{appt.secondary_services_text}</p>
+                             )}
+                          </div>
 
-                         {/* Precio */}
-                         <div className="text-right sm:w-[90px] shrink-0 border-l border-transparent sm:border-slate-100 sm:pl-4">
-                            <span className="text-sm font-bold text-green-700">${appt.price_charged?.toLocaleString() || 0}</span>
-                         </div>
-                       </div>
-                     ))}
+                          {/* Precio */}
+                          <div className="text-right sm:w-[90px] shrink-0 border-l border-transparent sm:border-slate-100 sm:pl-4">
+                             <span className="text-sm font-bold text-green-700">${appt.price_charged?.toLocaleString() || 0}</span>
+                          </div>
+                        </div>
+                      ))}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                     <div className="bg-slate-50 p-4 rounded-full mb-2">
-                        <FileText size={32} className="opacity-30"/>
-                     </div>
-                     <p className="text-sm font-medium text-slate-500">Sin registros disponibles</p>
-                     {pet_id && <p className="text-xs mt-1">Para esta mascota</p>}
+                      <div className="bg-slate-50 p-4 rounded-full mb-2">
+                         <FileText size={32} className="opacity-30"/>
+                      </div>
+                      <p className="text-sm font-medium text-slate-500">Sin registros disponibles</p>
+                      {pet_id && <p className="text-xs mt-1">Para esta mascota</p>}
                   </div>
                 )}
               </div>

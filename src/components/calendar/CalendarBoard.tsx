@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   format, addMinutes, startOfDay, setHours, addDays, isSameDay, 
   differenceInMinutes, parseISO, endOfDay, getDay, isWithinInterval, subDays,
-  startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth
+  startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isValid
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -101,13 +101,7 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
         if (position.y > window.innerHeight - 150) top = position.y - 140;
     }
 
-    const style: CSSProperties = { 
-        top, 
-        left, 
-        position: 'fixed', 
-        zIndex: 9999 
-    };
-
+    const style: CSSProperties = { top, left, position: 'fixed', zIndex: 9999 };
     const styles = getServiceCategoryStyles(data.service?.category);
     const CategoryIcon = styles.icon;
     let clientName = data.appointment?.client?.full_name || '';
@@ -147,24 +141,15 @@ const QuickScheduleMenu = ({ contextMenu, onClose, onSchedule }: { contextMenu: 
     return createPortal(
         <>
             <div className="fixed inset-0 z-[9998]" onClick={onClose} />
-            <div 
-                className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-2 w-48 animate-in fade-in zoom-in-95 duration-100"
-                style={{ top, left }}
-            >
+            <div className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-2 w-48 animate-in fade-in zoom-in-95 duration-100" style={{ top, left }}>
                 <div className="text-xs font-semibold text-slate-500 mb-2 px-2 py-1 border-b border-slate-100">
                     {format(contextMenu.startTime, 'HH:mm')} - {format(addMinutes(contextMenu.startTime, 30), 'HH:mm')}
                 </div>
-                <Button 
-                    size="sm" 
-                    variant="default" 
-                    className="w-full justify-start text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={onSchedule}
-                >
+                <Button size="sm" variant="default" className="w-full justify-start text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white" onClick={onSchedule}>
                     <Plus size={14} className="mr-2"/> Agendar Cita
                 </Button>
             </div>
-        </>,
-        document.body
+        </>, document.body
     );
 };
 
@@ -173,9 +158,13 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // FIX 1: Estado de montaje para evitar errores de hidratación
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => { setIsMounted(true); }, []);
+
   const [dateState, setDateState] = useState(currentDate);
   const [viewState, setViewState] = useState(view);
-  const [isLoadingData, setIsLoadingData] = useState(false); // Estado de carga para evitar parpadeos
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   useEffect(() => { 
       if (!isSameDay(currentDate, dateState)) setDateState(currentDate);
@@ -189,6 +178,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
   const SNAP_MINUTES = 15; 
 
   const columns = useMemo<ColumnData[]>(() => {
+    // Evitamos cálculos si no está montado
+    if (!isMounted) return [];
+
     if (viewState === 'day') {
       return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
     } else {
@@ -198,13 +190,14 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
         return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
       });
     }
-  }, [viewState, dateState, employees]);
+  }, [viewState, dateState, employees, isMounted]);
 
   const [localAppts, setLocalAppts] = useState<any[]>(appointments);
   const [schedules, setSchedules] = useState<any[]>([]); 
   const [absences, setAbsences] = useState<any[]>([]); 
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   
+  // Estados de Interacción
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [touchDragStart, setTouchDragStart] = useState<{ x: number; y: number; time: number } | null>(null);
   const [isDragStarted, setIsDragStarted] = useState(false);
@@ -245,13 +238,12 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       handleNavigate('date', newDate);
   };
 
-  useEffect(() => { setLocalAppts(appointments); }, [appointments]);
-
   // Data Fetching
   useEffect(() => {
     const fetchData = async () => {
       setIsLoadingData(true);
       let startRange, endRange;
+      
       if (viewState === 'month') {
           const monthStart = startOfMonth(dateState);
           const monthEnd = endOfMonth(monthStart);
@@ -262,11 +254,20 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
           endRange = endOfDay(viewState === '3day' ? addDays(dateState, 2) : viewState === 'week' ? addDays(dateState, 6) : dateState);
       }
       
+      // FIX 2: Ampliar rango para cubrir zonas horarias (-6h)
+      const queryStart = subDays(startRange, 1).toISOString();
+      const queryEnd = addDays(endRange, 1).toISOString();
+
       const { data: apptData } = await supabase.from('appointment_services')
         .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
-        .gte('start_time', startRange.toISOString()).lte('end_time', endRange.toISOString());
+        .gte('start_time', queryStart)
+        .lte('end_time', queryEnd);
       
-      if (apptData) setLocalAppts(apptData);
+      if (apptData) {
+          // Filtrar datos válidos
+          const validAppts = apptData.filter(a => a.start_time && a.end_time && isValid(parseISO(a.start_time)));
+          setLocalAppts(validAppts);
+      }
 
       const { data: schedData } = await supabase.from('employee_schedules').select('*');
       if (schedData) setSchedules(schedData);
@@ -496,14 +497,21 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
 
   const getAppointmentsForColumn = useCallback((col: ColumnData) => {
     // Si estamos cargando datos nuevos (cambio de fecha), evitamos renderizar citas que no corresponden
-    // para evitar el efecto de "parpadeo" de citas de la fecha anterior.
     if (isLoadingData) return [];
 
     const colAppts = localAppts.filter(appt => {
       const apptStart = parseISO(appt.start_time);
-      if (viewState === 'day') return appt.employee_id === col.id && isSameDay(apptStart, dateState);
-      else return format(apptStart, 'yyyy-MM-dd') === col.id;
+      
+      // FIX 3: Usar isSameDay con startOfDay para ignorar discrepancias de hora
+      if (viewState === 'day') {
+          return appt.employee_id === col.id && isSameDay(startOfDay(apptStart), startOfDay(dateState));
+      } else {
+          // En vistas semanales, comparamos fechas base
+          const colDate = col.type === 'date' ? col.data : new Date();
+          return isSameDay(startOfDay(apptStart), startOfDay(colDate));
+      }
     });
+
     const items = colAppts.map(appt => {
       const start = parseISO(appt.start_time);
       const end = parseISO(appt.end_time);
@@ -658,6 +666,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       return null;
   }, [absences, dateState, START_HOUR, END_HOUR, PIXELS_PER_MINUTE, holidays]);
 
+  // Si no está montado, renderizamos un esqueleto para evitar saltos
+  if (!isMounted) return <div className="w-full h-screen bg-white animate-pulse" />;
+
   return (
     <>
       <div className="flex flex-col w-full h-full bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden select-none relative">
@@ -766,37 +777,37 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                 const stats = getColumnStats(col);
                                 return (
                                     <div key={col.id} className={cn("flex-1 min-w-[150px] border-r border-slate-200/60 p-2 flex flex-col justify-between gap-1 h-[100px]", col.isToday && viewState !== 'day' ? "bg-blue-50/50" : "")}>
-                                        <div className="flex items-start justify-between w-full">
-                                            {col.type === 'employee' ? (
-                                                <div className="flex items-center gap-2">
-                                                    <Avatar className="h-8 w-8 ring-1 ring-slate-200" style={{ border: `2px solid ${col.data.color}` }}>
-                                                        <AvatarImage src={col.data.avatar_url || ''} />
-                                                        <AvatarFallback className="text-[10px] font-bold bg-slate-100 text-slate-600">{getInitials(col.data.first_name, col.data.last_name)}</AvatarFallback>
-                                                    </Avatar>
-                                                    <div className="flex flex-col leading-tight">
-                                                        <span className="text-xs font-bold text-slate-800 truncate max-w-[80px]">{col.data.first_name}</span>
-                                                        <span className="text-[9px] text-slate-400 uppercase tracking-tight">{col.subtitle}</span>
+                                            <div className="flex items-start justify-between w-full">
+                                                {col.type === 'employee' ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar className="h-8 w-8 ring-1 ring-slate-200" style={{ border: `2px solid ${col.data.color}` }}>
+                                                            <AvatarImage src={col.data.avatar_url || ''} />
+                                                            <AvatarFallback className="text-[10px] font-bold bg-slate-100 text-slate-600">{getInitials(col.data.first_name, col.data.last_name)}</AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="flex flex-col leading-tight">
+                                                            <span className="text-xs font-bold text-slate-800 truncate max-w-[80px]">{col.data.first_name}</span>
+                                                            <span className="text-[9px] text-slate-400 uppercase tracking-tight">{col.subtitle}</span>
+                                                        </div>
                                                     </div>
+                                                ) : (
+                                                    <div className="flex flex-col">
+                                                        <span className={cn("text-xs font-bold capitalize", col.isToday ? "text-blue-700" : "text-slate-800")}>{col.title}</span>
+                                                        <span className="text-[10px] text-slate-400 uppercase">{col.subtitle}</span>
+                                                    </div>
+                                                )}
+                                                <div className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 border border-slate-200">
+                                                    <PawPrint size={10} className="text-slate-400" /> {stats.count}
                                                 </div>
-                                            ) : (
-                                                <div className="flex flex-col">
-                                                    <span className={cn("text-xs font-bold capitalize", col.isToday ? "text-blue-700" : "text-slate-800")}>{col.title}</span>
-                                                    <span className="text-[10px] text-slate-400 uppercase">{col.subtitle}</span>
+                                            </div>
+                                            <div className="w-full space-y-1">
+                                                <div className="flex justify-between items-end text-[9px] text-slate-400 px-0.5">
+                                                    <span>Ocupación</span>
+                                                    <span className={cn("font-bold", stats.percentage >= 85 ? "text-emerald-600" : stats.percentage >= 65 ? "text-amber-600" : "text-blue-600")}>{stats.percentage}%</span>
                                                 </div>
-                                            )}
-                                            <div className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 border border-slate-200">
-                                                <PawPrint size={10} className="text-slate-400" /> {stats.count}
+                                                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden relative">
+                                                    <div className={cn("h-full transition-all duration-500 rounded-full", stats.barColor)} style={{ width: `${stats.percentage}%` }}></div>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div className="w-full space-y-1">
-                                            <div className="flex justify-between items-end text-[9px] text-slate-400 px-0.5">
-                                                <span>Ocupación</span>
-                                                <span className={cn("font-bold", stats.percentage >= 85 ? "text-emerald-600" : stats.percentage >= 65 ? "text-amber-600" : "text-blue-600")}>{stats.percentage}%</span>
-                                            </div>
-                                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden relative">
-                                                <div className={cn("h-full transition-all duration-500 rounded-full", stats.barColor)} style={{ width: `${stats.percentage}%` }}></div>
-                                            </div>
-                                        </div>
                                     </div>
                                 );
                             })}
@@ -829,11 +840,11 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                 {absenceOverlay && (
                                     <div className={cn("absolute inset-0 z-30 flex flex-col items-center justify-center p-4 text-center border-l-4 border-l-transparent bg-opacity-90 backdrop-blur-sm", absenceOverlay.bgColor)} 
                                         style={{ backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 10px, ${absenceOverlay.stripeColor} 10px, ${absenceOverlay.stripeColor} 12px)` }}>
-                                        <div className="bg-white/90 p-3 rounded-xl shadow-sm border border-slate-200/50 flex flex-col items-center max-w-[90%]">
-                                            <absenceOverlay.icon className="h-6 w-6 mb-1 text-slate-500" />
-                                            <span className="font-bold text-sm text-slate-800 uppercase tracking-wide">{absenceOverlay.label}</span>
-                                            {absenceOverlay.note && <span className="text-xs text-slate-500 mt-1 italic line-clamp-3">"{absenceOverlay.note}"</span>}
-                                        </div>
+                                    <div className="bg-white/90 p-3 rounded-xl shadow-sm border border-slate-200/50 flex flex-col items-center max-w-[90%]">
+                                        <absenceOverlay.icon className="h-6 w-6 mb-1 text-slate-500" />
+                                        <span className="font-bold text-sm text-slate-800 uppercase tracking-wide">{absenceOverlay.label}</span>
+                                        {absenceOverlay.note && <span className="text-xs text-slate-500 mt-1 italic line-clamp-3">"{absenceOverlay.note}"</span>}
+                                    </div>
                                     </div>
                                 )}
 

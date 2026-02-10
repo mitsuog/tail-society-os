@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { 
-  Dog, Cat, Syringe, AlertTriangle, Edit2, Trash2, Cross 
+  Dog, Cat, Syringe, AlertTriangle, Edit2, Trash2, Cross, Eye 
 } from 'lucide-react';
 import EditPetDialog from './EditPetDialog';
 import DeleteAlert from './DeleteAlert'; 
@@ -26,7 +26,6 @@ interface Pet {
   birth_date: string | null;
   photo_url: string | null;
   status: string; 
-  
   waiver_signed: boolean;
   is_vaccined: boolean;
   has_allergies: boolean;
@@ -51,7 +50,6 @@ interface PetCardProps {
   isActive: boolean;
 }
 
-// --- FUNCIÓN DE LIMPIEZA ---
 const cleanUrl = (url: string | null) => {
   if (!url) return '';
   if (url.startsWith('http')) return url;
@@ -66,7 +64,7 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-  const [showEdit, setShowEdit] = useState(false);
+  const [showDetail, setShowDetail] = useState(false); // Usamos este estado para el Dialog
 
   const getAge = (dateString: string | null) => {
     if (!dateString) return '';
@@ -81,6 +79,7 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
     return years > 0 ? `${years} años` : `${months} meses`;
   };
 
+  // 1. CLIC SIMPLE: Seleccionar/Filtrar
   const handleCardClick = () => {
     const params = new URLSearchParams(searchParams.toString());
     if (isActive) {
@@ -89,6 +88,12 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
       params.set('pet_id', pet.id);
     }
     router.push(`/clients/${clientId}?${params.toString()}`);
+  };
+
+  // 2. ABRIR DETALLE
+  const handleOpenDetail = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation(); // Evita que se active el filtro al dar click al botón
+    setShowDetail(true);
   };
 
   const handleDeletePet = async () => {
@@ -108,16 +113,15 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
   const SpeciesIcon = pet.species === 'Gato' ? Cat : Dog;
   const isDeceased = pet.status === 'deceased';
   const isInactive = pet.status === 'inactive';
-
-  // Usamos la versión limpia
   const safePhotoUrl = cleanUrl(pet.photo_url);
 
   return (
     <>
       <Card 
         onClick={handleCardClick}
+        onDoubleClick={handleOpenDetail} // DOBLE CLIC: Abre el detalle
         className={cn(
-          "relative flex items-center p-3 gap-3 cursor-pointer transition-all duration-200 border group overflow-hidden",
+          "relative flex items-center p-3 gap-3 cursor-pointer transition-all duration-200 border group overflow-hidden select-none",
           isActive 
             ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300 shadow-md' 
             : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm',
@@ -125,6 +129,7 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
           isInactive && "opacity-60 bg-slate-50 border-dashed"
         )}
       >
+        {/* FOTO */}
         <div className="shrink-0 relative h-16 w-16 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 shadow-inner">
           {safePhotoUrl ? (
             <Image 
@@ -147,6 +152,7 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
           )}
         </div>
 
+        {/* INFO */}
         <div className="flex-1 min-w-0 space-y-1">
            <div className="flex justify-between items-start">
               <div>
@@ -168,19 +174,31 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
            </div>
         </div>
 
+        {/* ACCIONES (Hover) */}
         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            
+            {/* BOTÓN VER DETALLE (NUEVO) */}
             <Button 
               variant="secondary" 
               size="icon" 
-              className="h-7 w-7 bg-white/90 hover:bg-white text-slate-500 hover:text-blue-600 shadow-sm border border-slate-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowEdit(true);
-              }}
+              className="h-7 w-7 bg-white/90 hover:bg-blue-50 text-slate-500 hover:text-blue-600 shadow-sm border border-slate-100"
+              onClick={handleOpenDetail}
+              title="Ver Ficha / Editar"
+            >
+              <Eye size={12} />
+            </Button>
+
+            {/* BOTÓN EDITAR (REDUNDANTE PERO ÚTIL) */}
+            <Button 
+              variant="secondary" 
+              size="icon" 
+              className="h-7 w-7 bg-white/90 hover:bg-white text-slate-500 hover:text-slate-700 shadow-sm border border-slate-100"
+              onClick={handleOpenDetail}
             >
               <Edit2 size={12} />
             </Button>
 
+            {/* BOTÓN ELIMINAR */}
             <div onClick={(e) => e.stopPropagation()}>
                <DeleteAlert 
                   title={`¿Eliminar a ${pet.name}?`}
@@ -200,11 +218,12 @@ export default function PetCard({ pet, clientId, isActive }: PetCardProps) {
          </div>
       </Card>
 
-      {showEdit && (
+      {/* DIALOGO DE EDICIÓN/DETALLE */}
+      {showDetail && (
         <EditPetDialog 
           pet={pet} 
-          open={showEdit} 
-          onOpenChange={setShowEdit} 
+          open={showDetail} 
+          onOpenChange={setShowDetail} 
         />
       )}
     </>
