@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { CalendarPlus, Search } from 'lucide-react';
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
-import { subDays, addDays } from 'date-fns';
+import { subDays, addDays, format, subWeeks } from 'date-fns'; // Importamos subWeeks
+import { es } from 'date-fns/locale';
 import DraggableDashboard from '@/components/dashboard/DraggableDashboard';
 import { fetchRecentZettlePurchases } from '@/lib/zettle';
 import { WIDGET_CATALOG } from '@/components/dashboard/WidgetRegistry';
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
       else { displayName = user.user_metadata?.first_name || 'Admin'; role = 'admin'; }
   }
 
-  // 2. FECHAS (Monterrey)
+  // 2. CONFIGURACIÓN DE FECHAS
   const timeZone = 'America/Monterrey';
   const now = new Date();
   const getMtyDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone });
@@ -34,7 +35,7 @@ export default async function DashboardPage() {
   const hour = Number(new Date().toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone }));
   const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
 
-  // 3. LAYOUT (Reglas de Negocio + Limpieza)
+  // 3. LAYOUT (Reglas de Negocio)
   const DEFAULT_LAYOUTS: Record<string, string[]> = {
       'admin': ['quick_actions', 'weather', 'agenda_combined', 'retention_risk', 'revenue_zettle', 'staff_status'],
       'manager': ['quick_actions', 'weather', 'agenda_combined', 'retention_risk', 'revenue_zettle', 'staff_status'],
@@ -47,7 +48,6 @@ export default async function DashboardPage() {
   if (user) {
     const { data: settings } = await supabase.from('user_settings').select('dashboard_layout').eq('user_id', user.id).single();
     if (settings && settings.dashboard_layout && Array.isArray(settings.dashboard_layout) && settings.dashboard_layout.length > 0) {
-        // Limpieza de duplicados y legacy
         const legacyMap: Record<string, string> = { 'live_operations': 'agenda_combined', 'stats_overview': 'revenue_zettle', 'client_pulse': 'quick_actions' };
         const cleaned = new Set<string>();
         settings.dashboard_layout.forEach((id: string) => {
@@ -58,76 +58,73 @@ export default async function DashboardPage() {
     }
   }
 
-  // 4. FETCHING
-  
-  // A. AGENDA (CONSULTA CORREGIDA A APPOINTMENT_SERVICES)
+  // 4. FETCHING DE DATOS
+
+  // A. FINANZAS (CON AYER Y SEMANA PASADA)
+  const getFinance = async () => {
+      if (!['admin', 'manager', 'receptionist'].includes(role)) return null;
+      
+      const yesterday = subDays(now, 1);
+      const lastWeekSameDay = subWeeks(now, 1);
+
+      const yesterdayStr = getMtyDateStr(yesterday);
+      const lastWeekStr = getMtyDateStr(lastWeekSameDay);
+
+      // Fetch Zettle Data (Rango amplio para asegurar datos)
+      const [todayData, yesterdayData, lastWeekData] = await Promise.all([
+          fetchRecentZettlePurchases(todayStr, getMtyDateStr(addDays(now, 1))),
+          fetchRecentZettlePurchases(yesterdayStr, todayStr),
+          fetchRecentZettlePurchases(lastWeekStr, getMtyDateStr(addDays(lastWeekSameDay, 1)))
+      ]);
+
+      const calcTotal = (res: any, target: string) => {
+          if (!res?.purchases) return 0;
+          return res.purchases.reduce((acc: number, p: any) => {
+              const pDate = new Date(p.timestamp).toLocaleDateString('en-CA', {timeZone});
+              return pDate === target ? acc + (p.amount || 0) : acc;
+          }, 0) / 100;
+      };
+
+      const tVal = calcTotal(todayData, todayStr);
+      const yVal = calcTotal(yesterdayData, yesterdayStr);
+      const lVal = calcTotal(lastWeekData, lastWeekStr);
+
+      const vsYest = yVal > 0 ? ((tVal - yVal) / yVal) * 100 : 0;
+      const vsWeek = lVal > 0 ? ((tVal - lVal) / lVal) * 100 : 0;
+
+      const formatMoney = (n: number) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n);
+
+      return {
+          amount: formatMoney(tVal),
+          rawAmount: tVal,
+          vsYesterday: vsYest,
+          vsLastWeek: vsWeek,
+          yesterdayAmount: formatMoney(yVal),
+          lastWeekAmount: formatMoney(lVal)
+      };
+  };
+
+  // B. AGENDA
   const getAgendaData = async () => {
-    // Consultamos directamente los servicios y unimos con la cita padre para filtrar por fecha
     const { data, error } = await supabase
         .from('appointment_services')
-        .select(`
-            id, service_name, category, start_time,
-            services (name, category),
-            appointments!inner (
-                id, start_time, status,
-                pets (name)
-            )
-        `)
+        .select(`id, service_name, category, start_time, services (name, category), appointments!inner (id, start_time, status, pets (name))`)
         .gte('appointments.start_time', todayStartISO)
         .lte('appointments.start_time', todayEndISO)
         .neq('appointments.status', 'cancelled');
 
-    if (error) {
-        console.error("Error agenda:", error);
-        return { items: [], stats: { total: 0 } };
-    }
-    if (!data) return { items: [], stats: { total: 0 } };
+    if (error || !data) return [];
 
-    const items = data.map((item: any) => {
+    return data.map((item: any) => {
         const petsData = item.appointments?.pets as any;
         const petName = Array.isArray(petsData) ? petsData[0]?.name : petsData?.name;
-        
-        // Prioridad de nombres: appointment_services > services > Default
         const svcName = item.service_name || item.services?.name || 'Servicio';
         const svcCat = (item.category || item.services?.category || 'baño').toLowerCase();
-
-        return {
-            id: item.id, // ID del servicio
-            start_time: item.appointments?.start_time, // Hora de la cita padre
-            pet_name: petName || 'Mascota',
-            status: item.appointments?.status,
-            service_name: svcName,
-            service_category: svcCat
-        };
+        return { id: item.id, start_time: item.appointments?.start_time, pet_name: petName || 'Mascota', status: item.appointments?.status, service_name: svcName, service_category: svcCat };
     });
-
-    return { items, stats: { total: items.length } };
   };
 
-  // B. FINANZAS
-  const getFinance = async () => {
-      if (!['admin', 'manager', 'receptionist'].includes(role)) return null;
-      const [tD, yD] = await Promise.all([
-          fetchRecentZettlePurchases(todayStr, getMtyDateStr(addDays(now, 1))),
-          fetchRecentZettlePurchases(getMtyDateStr(subDays(now, 1)), todayStr)
-      ]);
-      const calc = (res: any, target: string) => res?.purchases?.reduce((acc: number, p: any) => (new Date(p.timestamp).toLocaleDateString('en-CA', {timeZone}) === target ? acc + (p.amount||0) : acc), 0)/100 || 0;
-      const tVal = calc(tD, todayStr); const yVal = calc(yD, getMtyDateStr(subDays(now, 1)));
-      return { amount: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits:0 }).format(tVal), vsYesterday: yVal > 0 ? ((tVal-yVal)/yVal)*100 : 0, yesterdayAmount: `$${yVal}`, lastWeekAmount: '$0', vsLastWeek: 0 };
-  };
-
-  // C. STAFF
-  const getStaff = async () => {
-      const { data: emps } = await supabase.from('employees').select('id, first_name').eq('active', true); if(!emps) return [];
-      const { data: jobs } = await supabase.from('appointments').select('employee_id, pets(name)').eq('status', 'in_process').gte('start_time', todayStartISO).lte('start_time', todayEndISO);
-      return emps.map(e => { 
-          const job = jobs?.find((j: any) => j.employee_id === e.id); 
-          const jobPets = job?.pets as any; 
-          return { id: e.id, name: e.first_name, status: (job ? 'busy' : 'free') as 'busy'|'free', current_pet: jobPets ? (Array.isArray(jobPets) ? jobPets[0]?.name : jobPets.name) : undefined }; 
-      });
-  };
-
-  // D. RETENCIÓN
+  // C. RETENCIÓN (15 vs 30 DÍAS)
   const getRetention = async () => {
       const { data: appts } = await supabase.from('appointments').select('client_id, date, clients(id, full_name, phone)').gte('date', subDays(now, 90).toISOString()).order('date', {ascending: false});
       if(!appts) return { risk15: [], risk30: [] };
@@ -137,35 +134,54 @@ export default async function DashboardPage() {
               visited.add(a.client_id);
               const days = Math.floor((now.getTime() - new Date(a.date).getTime())/(1000*60*60*24));
               const c = a.clients as any; const client = Array.isArray(c) ? c[0] : c;
-              if(client) { const item = { id: client.id, name: client.full_name, phone: client.phone, days_ago: days }; if(days >= 30) risk30.push(item); else if(days >= 15) risk15.push(item); }
+              if(client) { 
+                  const item = { id: client.id, name: client.full_name, phone: client.phone, days_ago: days };
+                  if(days >= 30) risk30.push(item); 
+                  else if(days >= 15) risk15.push(item); 
+              }
           }
       });
       return { risk15: risk15.slice(0,5), risk30: risk30.slice(0,5) };
   };
 
+  // D. CLIMA GENERADO (Simulado para Demo)
+  const getWeather = () => {
+      // Como no hay API key, generamos un pronóstico coherente
+      const days = [
+          { day: format(addDays(now, 1), 'EEE', { locale: es }), temp: 26, rain: 20, icon: 'sun' },
+          { day: format(addDays(now, 2), 'EEE', { locale: es }), temp: 24, rain: 40, icon: 'cloud' },
+          { day: format(addDays(now, 3), 'EEE', { locale: es }), temp: 23, rain: 10, icon: 'sun' },
+      ];
+      return {
+          current: { temp: 25, condition: 'Parcialmente Nublado', min: 19, max: 28, rainProb: 15 },
+          forecast: days
+      };
+  };
+
+  // Otros Fetches
+  const getStaff = async () => {
+      const { data: emps } = await supabase.from('employees').select('id, first_name').eq('active', true); if(!emps) return [];
+      const { data: jobs } = await supabase.from('appointments').select('employee_id, pets(name)').eq('status', 'in_process').gte('start_time', todayStartISO).lte('start_time', todayEndISO);
+      return emps.map(e => { 
+          const job = jobs?.find((j: any) => j.employee_id === e.id); const jobPets = job?.pets as any; 
+          return { id: e.id, name: e.first_name, status: (job ? 'busy' : 'free') as 'busy'|'free', current_pet: jobPets ? (Array.isArray(jobPets) ? jobPets[0]?.name : jobPets.name) : undefined }; 
+      });
+  };
   const getTopBreeds = async () => {
       const { data } = await supabase.from('appointments').select('pets(breed)').gte('date', subDays(now, 30).toISOString()).eq('status', 'completed');
-      const counts: Record<string, number> = {};
-      data?.forEach((i: any) => { const p = i.pets as any; const petObj = Array.isArray(p) ? p[0] : p; if(petObj?.breed) counts[petObj.breed] = (counts[petObj.breed]||0)+1; });
+      const counts: Record<string, number> = {}; data?.forEach((i: any) => { const p = i.pets as any; const petObj = Array.isArray(p) ? p[0] : p; if(petObj?.breed) counts[petObj.breed] = (counts[petObj.breed]||0)+1; });
       return Object.entries(counts).map(([name, count]) => ({name, count})).sort((a,b)=>b.count-a.count).slice(0,4);
   }
 
-  // Ejecución Paralela
-  const [finance, agendaData, staff, retention, topBreeds] = await Promise.all([
-      getFinance(), getAgendaData(), getStaff(), getRetention(), getTopBreeds()
-  ]);
+  // Ejecución
+  const [finance, agendaData, staff, retention, topBreeds] = await Promise.all([getFinance(), getAgendaData(), getStaff(), getRetention(), getTopBreeds()]);
 
-  // ESTRUCTURA FINAL DE DATOS (IMPORTANTE: Agenda debe ser objeto)
   const dashboardData = {
       revenue: finance,
-      agenda: agendaData, // Ahora es { items: [], stats: {} }
-      staff, 
-      retention, 
-      topBreeds,
-      // Operaciones se deriva de la agenda ahora para simplificar
-      operations: { waiting: 0, bathing: 0, cutting: 0, ready: 0, total: agendaData.items.length }, 
+      agenda: agendaData, // Array directo para el widget simple
+      staff, retention, topBreeds,
       clientInsights: { newClients: [], birthdays: [] },
-      weather: { temp: 24, condition: 'Soleado', min: 18, rainProb: 0 },
+      weather: getWeather(),
       dateContext
   };
 
