@@ -3,10 +3,9 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { CalendarPlus, Search } from 'lucide-react';
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
-import { subDays, addDays, startOfDay, endOfDay } from 'date-fns';
+import { subDays, addDays } from 'date-fns';
 import DraggableDashboard from '@/components/dashboard/DraggableDashboard';
 import { fetchRecentZettlePurchases } from '@/lib/zettle';
-// Importamos el catálogo para saber qué widgets existen realmente
 import { WIDGET_CATALOG } from '@/components/dashboard/WidgetRegistry';
 
 export const dynamic = 'force-dynamic';
@@ -20,13 +19,8 @@ export default async function DashboardPage() {
   let displayName = 'Usuario';
   if (user) {
       const { data: emp } = await supabase.from('employees').select('role, first_name').eq('id', user.id).single();
-      if (emp) { 
-          role = emp.role; 
-          displayName = emp.first_name; 
-      } else { 
-          displayName = user.user_metadata?.first_name || 'Admin'; 
-          role = 'admin'; 
-      }
+      if (emp) { role = emp.role; displayName = emp.first_name; } 
+      else { displayName = user.user_metadata?.first_name || 'Admin'; role = 'admin'; }
   }
 
   // 2. CONFIGURACIÓN DE FECHAS
@@ -34,140 +28,111 @@ export default async function DashboardPage() {
   const now = new Date();
   const getMtyDateStr = (d: Date) => d.toLocaleDateString('en-CA', { timeZone });
   const todayStr = getMtyDateStr(now); 
-  const yestStr = getMtyDateStr(subDays(now, 1));
-  const lastWeekStr = getMtyDateStr(subDays(now, 7));
-  const todayStartSupabase = `${todayStr}T00:00:00-06:00`;
-  const todayEndSupabase = `${todayStr}T23:59:59.999-06:00`;
+  const todayStartISO = `${todayStr}T00:00:00-06:00`;
+  const todayEndISO = `${todayStr}T23:59:59.999-06:00`;
   const dateContext = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', timeZone });
   const hour = Number(new Date().toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone }));
   const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
 
-  // 3. LAYOUT LIMPIO (SIN DUPLICADOS)
-  const defaultLayout = ['revenue_zettle', 'agenda_combined', 'staff_status', 'weather', 'quick_actions', 'retention_risk', 'top_breeds'];
-  let userLayout: string[] = defaultLayout;
+  // 3. LAYOUTS POR DEFECTO (REGLAS DE NEGOCIO)
+  const DEFAULT_LAYOUTS: Record<string, string[]> = {
+      'admin': ['quick_actions', 'weather', 'agenda_combined', 'retention_risk', 'revenue_zettle', 'staff_status'],
+      'manager': ['quick_actions', 'weather', 'agenda_combined', 'retention_risk', 'revenue_zettle', 'staff_status'],
+      'receptionist': ['quick_actions', 'weather', 'agenda_combined', 'retention_risk', 'revenue_zettle'],
+      'employee': ['weather', 'agenda_combined', 'top_breeds']
+  };
+
+  // Determinar layout inicial
+  let userLayout: string[] = DEFAULT_LAYOUTS[role] || DEFAULT_LAYOUTS['employee'];
 
   if (user) {
     const { data: settings } = await supabase.from('user_settings').select('dashboard_layout').eq('user_id', user.id).single();
     
-    if (settings?.dashboard_layout && Array.isArray(settings.dashboard_layout) && settings.dashboard_layout.length > 0) {
-        // --- LIMPIEZA AGRESIVA ---
-        const rawLayout = settings.dashboard_layout;
-        const uniqueSet = new Set<string>();
-        
-        rawLayout.forEach((id: string) => {
-            // Mapeo forzado de IDs viejos a nuevos
-            let newId = id;
-            if (id === 'stats_overview') newId = 'revenue_zettle';
-            if (id === 'live_operations') newId = 'agenda_combined';
-            if (id === 'client_pulse') newId = 'quick_actions';
-            
-            // Solo agregamos si existe en el catálogo actual y no está ya en el set
-            // (Esto elimina duplicados visuales y IDs basura)
-            if (WIDGET_CATALOG[newId as keyof typeof WIDGET_CATALOG]) {
-                uniqueSet.add(newId);
-            }
+    // FIX TS18047: Validación segura de settings
+    if (settings && settings.dashboard_layout && Array.isArray(settings.dashboard_layout) && settings.dashboard_layout.length > 0) {
+        // Limpieza de legacy
+        const legacyMap: Record<string, string> = { 'live_operations': 'agenda_combined', 'stats_overview': 'revenue_zettle', 'client_pulse': 'quick_actions' };
+        const cleaned = new Set<string>();
+        settings.dashboard_layout.forEach((id: string) => {
+            const newId = legacyMap[id] || id;
+            if (Object.keys(WIDGET_CATALOG).includes(newId)) cleaned.add(newId);
         });
-        userLayout = Array.from(uniqueSet);
+        userLayout = Array.from(cleaned);
     }
   }
 
-  // 4. FETCHING DE DATOS (Mismo código optimizado de antes)
+  // 4. FETCHING DE DATOS
   const getFinance = async () => {
       if (!['admin', 'manager', 'receptionist'].includes(role)) return null;
-      const nextDayStr = (d: Date) => getMtyDateStr(addDays(d, 1));
-      const [todayData, yestData, lastWeekData] = await Promise.all([
-          fetchRecentZettlePurchases(todayStr, nextDayStr(now)),
-          fetchRecentZettlePurchases(yestStr, todayStr),
-          fetchRecentZettlePurchases(lastWeekStr, nextDayStr(subDays(now, 7)))
+      const [tD, yD] = await Promise.all([
+          fetchRecentZettlePurchases(todayStr, getMtyDateStr(addDays(now, 1))),
+          fetchRecentZettlePurchases(getMtyDateStr(subDays(now, 1)), todayStr)
       ]);
-      const calculateTotal = (res: any, target: string) => res?.purchases ? res.purchases.reduce((acc: number, p: any) => { const pDate = new Date(p.timestamp).toLocaleDateString('en-CA', { timeZone }); return pDate === target ? acc + (p.amount || 0) : acc; }, 0) / 100 : 0;
-      const tVal = calculateTotal(todayData, todayStr); const yVal = calculateTotal(yestData, yestStr); const lVal = calculateTotal(lastWeekData, lastWeekStr);
-      return { amount: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(tVal), vsYesterday: yVal > 0 ? ((tVal - yVal)/yVal)*100 : 0, vsLastWeek: lVal > 0 ? ((tVal - lVal)/lVal)*100 : 0, yesterdayAmount: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(yVal), lastWeekAmount: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(lVal) };
+      const calc = (res: any, target: string) => res?.purchases?.reduce((acc: number, p: any) => (new Date(p.timestamp).toLocaleDateString('en-CA', {timeZone}) === target ? acc + (p.amount||0) : acc), 0)/100 || 0;
+      const tVal = calc(tD, todayStr); const yVal = calc(yD, getMtyDateStr(subDays(now, 1)));
+      return { amount: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits:0 }).format(tVal), vsYesterday: yVal > 0 ? ((tVal-yVal)/yVal)*100 : 0, yesterdayAmount: `$${yVal}`, lastWeekAmount: '$0', vsLastWeek: 0 };
   };
 
-  const getOperationalData = async () => {
-    const { data, error } = await supabase.from('appointment_services').select(`id, service_name, category, services ( name, category ), appointments!inner ( id, start_time, status, pets (name) )`).gte('appointments.start_time', todayStartSupabase).lte('appointments.start_time', todayEndSupabase).neq('appointments.status', 'cancelled');
-    if (error || !data) return { agenda: [], operations: { waiting:0, bathing:0, cutting:0, ready:0, total:0 } };
-    const agenda = data.map((item: any) => {
-        const petsData = item.appointments?.pets;
+  const getAgendaData = async () => {
+    const { data, error } = await supabase.from('appointments').select(`id, start_time, status, pets (name), appointment_services (service_name, services (name, category))`).gte('start_time', todayStartISO).lte('start_time', todayEndISO).neq('status', 'cancelled');
+    if (error || !data) return [];
+    return data.map((appt: any) => {
+        // FIX TS2339: Cast explicito a 'any' para evitar error 'never'
+        const petsData = appt.pets as any;
         const petName = Array.isArray(petsData) ? petsData[0]?.name : petsData?.name;
-        const svcName = item.service_name || item.services?.name || 'Servicio';
-        const svcCat = (item.category || item.services?.category || 'baño').toLowerCase();
-        return { id: item.id, start_time: item.appointments?.start_time, pet_name: petName || 'Mascota', status: item.appointments?.status, service_name: svcName, service_category: svcCat };
+        const s = appt.appointment_services; 
+        const mS = Array.isArray(s) ? s[0] : s;
+        return { id: appt.id, start_time: appt.start_time, pet_name: petName || 'Mascota', status: appt.status, service_name: mS?.service_name || mS?.services?.name || 'Servicio', service_category: (mS?.services?.category || 'baño').toLowerCase() };
     });
-    let waiting = 0, bathing = 0, cutting = 0, ready = 0; const processedAppts = new Set(); 
-    data.forEach((item: any) => {
-        const apptId = item.appointments.id; const status = item.appointments.status; const cat = (item.category || item.services?.category || '').toLowerCase();
-        if (!processedAppts.has(apptId)) { if (status === 'checked_in' || status === 'confirmed') waiting++; else if (status === 'completed') ready++; processedAppts.add(apptId); }
-        if (status === 'in_process' || status === 'attended') { if (cat.includes('corte') || cat.includes('cut')) cutting++; else bathing++; }
-    });
-    return { agenda, operations: { waiting, bathing, cutting, ready, total: (waiting + bathing + cutting + ready) } };
   };
 
-  const getStaffStatus = async () => {
-    const { data: employees } = await supabase.from('employees').select('id, first_name').eq('active', true); if (!employees) return [];
-    const { data: activeAppts } = await supabase.from('appointments').select('employee_id, pets(name)').eq('status', 'in_process').gte('start_time', todayStartSupabase).lte('start_time', todayEndSupabase);
-    return employees.map(emp => { const job = activeAppts?.find((a: any) => a.employee_id === emp.id); const jobPets = job?.pets as any; const pName = jobPets ? (Array.isArray(jobPets) ? jobPets[0]?.name : jobPets.name) : undefined; return { id: emp.id, name: emp.first_name, status: (job ? 'busy' : 'free') as 'busy' | 'free' | 'break', current_pet: pName }; });
-  };
-
-  const getTopBreeds = async () => {
-     const monthAgo = subDays(now, 30).toISOString();
-     const { data } = await supabase.from('appointments').select(`pets(breed)`).gte('date', monthAgo).eq('status', 'completed');
-     const counts: Record<string, number> = {};
-     data?.forEach((i: any) => { const p = i.pets as any; const petObj = Array.isArray(p) ? p[0] : p; if (petObj?.breed) counts[petObj.breed] = (counts[petObj.breed] || 0) + 1; });
-     return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 4);
+  const getStaff = async () => {
+      const { data: emps } = await supabase.from('employees').select('id, first_name').eq('active', true); if(!emps) return [];
+      const { data: jobs } = await supabase.from('appointments').select('employee_id, pets(name)').eq('status', 'in_process').gte('start_time', todayStartISO).lte('start_time', todayEndISO);
+      return emps.map(e => { 
+          const job = jobs?.find((j: any) => j.employee_id === e.id); 
+          const jobPets = job?.pets as any; // Cast explicito
+          return { id: e.id, name: e.first_name, status: (job ? 'busy' : 'free') as 'busy'|'free', current_pet: jobPets ? (Array.isArray(jobPets) ? jobPets[0]?.name : jobPets.name) : undefined }; 
+      });
   };
 
   const getRetention = async () => {
-      const rangeStart = subDays(now, 90).toISOString();
-      const { data: appts } = await supabase.from('appointments').select('client_id, date, clients(id, full_name, phone)').gte('date', rangeStart).order('date', { ascending: false });
-      if (!appts) return { risk15: [], risk30: [] };
-      const lastVisits = new Map();
-      appts.forEach((a: any) => { if (!lastVisits.has(a.client_id)) { const c = a.clients as any; lastVisits.set(a.client_id, { date: new Date(a.date), client: Array.isArray(c) ? c[0] : c }); }});
-      const risk15: any[] = []; const risk30: any[] = []; const t = now.getTime();
-      lastVisits.forEach((val) => {
-          const daysAgo = Math.floor((t - val.date.getTime()) / (1000 * 60 * 60 * 24));
-          if (val.client?.full_name) {
-              const item = { id: val.client.id, name: val.client.full_name, phone: val.client.phone, days_ago: daysAgo };
-              if (daysAgo >= 30) risk30.push(item); else if (daysAgo >= 15) risk15.push(item);
+      const { data: appts } = await supabase.from('appointments').select('client_id, date, clients(id, full_name, phone)').gte('date', subDays(now, 90).toISOString()).order('date', {ascending: false});
+      if(!appts) return { risk15: [], risk30: [] };
+      const visited = new Set(); const risk15: any[] = []; const risk30: any[] = [];
+      appts.forEach((a: any) => {
+          if(!visited.has(a.client_id)) {
+              visited.add(a.client_id);
+              const days = Math.floor((now.getTime() - new Date(a.date).getTime())/(1000*60*60*24));
+              const c = a.clients as any; const client = Array.isArray(c) ? c[0] : c;
+              if(client) { const item = { id: client.id, name: client.full_name, phone: client.phone, days_ago: days }; if(days >= 30) risk30.push(item); else if(days >= 15) risk15.push(item); }
           }
       });
-      return { risk15: risk15.slice(0, 10), risk30: risk30.slice(0, 10) };
+      return { risk15: risk15.slice(0,5), risk30: risk30.slice(0,5) };
   };
 
-  const getInsights = async () => {
-      const weekAgo = subDays(now, 7).toISOString();
-      const { data: newC } = await supabase.from('clients').select('id, full_name, phone, created_at').gte('created_at', weekAgo).order('created_at', { ascending: false }).limit(10);
-      const newClients = newC?.map((c: any) => ({ id: c.id, name: c.full_name, phone: c.phone, created_at: c.created_at })) || [];
-      return { newClients, birthdays: [] }; 
-  };
+  const getTopBreeds = async () => {
+      const { data } = await supabase.from('appointments').select('pets(breed)').gte('date', subDays(now, 30).toISOString()).eq('status', 'completed');
+      const counts: Record<string, number> = {};
+      data?.forEach((i: any) => { const p = i.pets as any; const petObj = Array.isArray(p) ? p[0] : p; if(petObj?.breed) counts[petObj.breed] = (counts[petObj.breed]||0)+1; });
+      return Object.entries(counts).map(([name, count]) => ({name, count})).sort((a,b)=>b.count-a.count).slice(0,4);
+  }
 
-  const [finance, ops, staff, topBreeds, retention, insights] = await Promise.all([getFinance(), getOperationalData(), getStaffStatus(), getTopBreeds(), getRetention(), getInsights()]);
+  const [finance, agenda, staff, retention, topBreeds] = await Promise.all([getFinance(), getAgendaData(), getStaff(), getRetention(), getTopBreeds()]);
 
-  const dashboardData = {
-    revenue: finance, agenda: { items: ops.agenda, stats: ops.operations }, operations: ops.operations, staff, topBreeds, retention, clientInsights: insights, weather: { temp: 24, condition: 'Soleado', min: 18, rainProb: 10 }, dateContext
-  };
+  const dashboardData = { revenue: finance, agenda: agenda, staff, retention, topBreeds, clientInsights: { newClients: [], birthdays: [] }, weather: { temp: 24, condition: 'Soleado', min: 18, rainProb: 0 }, dateContext };
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-50/50 overflow-y-auto">
       <div className="max-w-[1600px] mx-auto w-full p-4 md:p-8 space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-2">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{greeting}, {displayName}</h1>
-            <p className="text-slate-500 mt-1 text-sm">Resumen de actividad.</p>
-          </div>
+          <div><h1 className="text-3xl font-bold text-slate-900 tracking-tight">{greeting}, {displayName}</h1><p className="text-slate-500 mt-1 text-sm">Resumen de actividad.</p></div>
           <div className="flex gap-2">
              <Link href="/admin/clients"><Button variant="outline" className="bg-white border-slate-200 text-slate-600 h-9 text-xs"><Search className="mr-2 h-3.5 w-3.5" /> Buscar</Button></Link>
              <NewAppointmentDialog customTrigger={<Button className="bg-slate-900 text-white h-9 text-xs"><CalendarPlus className="mr-2 h-3.5 w-3.5" /> Nueva Cita</Button>} />
           </div>
         </div>
-        {/* Pasamos los widgets disponibles para que el componente sepa cuáles puede añadir */}
-        <DraggableDashboard 
-            initialLayout={userLayout} 
-            userRole={role} 
-            data={dashboardData as any} 
-            availableWidgets={Object.keys(WIDGET_CATALOG)}
-        />
+        <DraggableDashboard initialLayout={userLayout} userRole={role} data={dashboardData as any} availableWidgets={Object.keys(WIDGET_CATALOG)} />
       </div>
     </div>
   );

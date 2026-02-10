@@ -6,6 +6,8 @@ import {
   closestCenter, 
   KeyboardSensor, 
   PointerSensor, 
+  TouchSensor,
+  MouseSensor,
   useSensor, 
   useSensors 
 } from '@dnd-kit/core';
@@ -20,15 +22,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Settings2, Plus, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WIDGET_CATALOG, WidgetId, DashboardData } from './WidgetRegistry';
 
 interface DraggableDashboardProps {
@@ -40,13 +34,14 @@ interface DraggableDashboardProps {
 
 function SortableItem({ id, children, colSpan = 1, onRemove }: { id: string; children: React.ReactNode; colSpan?: number, onRemove: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : 'auto', opacity: isDragging ? 0.8 : 1 };
+  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : 'auto', opacity: isDragging ? 0.8 : 1, touchAction: 'none' };
   const colSpanClass = colSpan === 2 ? 'md:col-span-2' : 'md:col-span-1';
 
   return (
-    <div ref={setNodeRef} style={style} className={`${colSpanClass} relative group h-full`}>
-      <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-1.5 bg-white/80 backdrop-blur-sm rounded-md shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
-        <GripVertical size={14} className="text-slate-400" />
+    <div ref={setNodeRef} style={style} className={`${colSpanClass} relative group h-full select-none`}>
+      {/* Botón de agarre visible en escritorio o siempre para mayor claridad */}
+      <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-2 bg-white/90 backdrop-blur-sm rounded-md shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 touch-manipulation transition-opacity">
+        <GripVertical size={16} className="text-slate-500" />
       </div>
       {children}
     </div>
@@ -54,21 +49,27 @@ function SortableItem({ id, children, colSpan = 1, onRemove }: { id: string; chi
 }
 
 export default function DraggableDashboard({ initialLayout, userRole = 'employee', data }: DraggableDashboardProps) {
-  // 1. FILTRADO ESTRICTO DE ROLES AL INICIO
-  // Solo permitimos widgets que el usuario tenga permiso de ver, ignorando lo que venga de DB si es ilegal
+  // Filtrado de roles
   const validLayout = initialLayout.filter(id => {
       const widget = WIDGET_CATALOG[id as WidgetId];
-      if (!widget) return false; // Si no existe, fuera
+      if (!widget) return false;
       if (widget.roles.includes('all')) return true;
       if (widget.roles.includes(userRole)) return true;
-      return false; // Si no tiene rol, fuera
+      return false;
   });
 
-  // Limpiar duplicados visuales por si acaso
   const [items, setItems] = useState<string[]>(Array.from(new Set(validLayout)));
   const supabase = createClient();
 
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  // SENSORES OPTIMIZADOS PARA MOVIL
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 10 } }),
+    useSensor(TouchSensor, { 
+        // Para móvil: Presionar 250ms para empezar a arrastrar, permite scroll si es rápido
+        activationConstraint: { delay: 250, tolerance: 5 } 
+    }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const saveLayout = async (newLayout: string[]) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -120,13 +121,9 @@ export default function DraggableDashboard({ initialLayout, userRole = 'employee
                 <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuLabel>Widgets Disponibles</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {Object.keys(WIDGET_CATALOG)
-                        .filter(k => !['stats_overview','live_operations'].includes(k)) // Ocultar legacy
-                        .map((widgetId) => {
-                            // Filtramos el menú también por rol
+                    {Object.keys(WIDGET_CATALOG).filter(k => !['stats_overview','live_operations'].includes(k)).map((widgetId) => {
                             const widgetDef = WIDGET_CATALOG[widgetId as WidgetId];
                             if (userRole !== 'admin' && !widgetDef.roles.includes('all') && !widgetDef.roles.includes(userRole)) return null;
-
                             return (
                                 <DropdownMenuCheckboxItem key={widgetId} checked={items.includes(widgetId)} onCheckedChange={() => toggleWidget(widgetId)}>
                                     {WIDGET_NAMES[widgetId] || widgetId}
@@ -141,8 +138,7 @@ export default function DraggableDashboard({ initialLayout, userRole = 'employee
         <SortableContext items={items} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 pb-10">
             {items.map((id) => {
-                const widgetId = id as WidgetId;
-                const widgetDef = WIDGET_CATALOG[widgetId];
+                const widgetDef = WIDGET_CATALOG[id as WidgetId];
                 if (!widgetDef) return null;
                 const Component = widgetDef.component;
                 return (
