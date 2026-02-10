@@ -102,7 +102,7 @@ const QuickActionsWidget = () => (
     </Card>
 );
 
-// 4. WATCHLIST (RETENTION) - CON CTA
+// 4. WATCHLIST (RETENTION) - CON TEXTO DE ACCIÓN
 const RetentionWidget = ({ data }: { data: DashboardData }) => {
     const riskClients = [...(data.retention?.risk30 || []), ...(data.retention?.risk15 || [])].slice(0, 5);
     return (
@@ -111,8 +111,10 @@ const RetentionWidget = ({ data }: { data: DashboardData }) => {
                 <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-2 truncate">
                     <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0"/> <span className="truncate">Watchlist</span>
                 </CardTitle>
-                {/* CAMBIO DE TEXTO: CTA */}
-                <Badge variant="outline" className="text-[9px] h-5 px-1.5 font-bold text-amber-700 bg-amber-50 border-amber-200 whitespace-nowrap">Requiere Atención</Badge>
+                {/* CAMBIO: Texto Call to Action */}
+                <Badge variant="outline" className="text-[9px] h-5 px-1.5 font-bold text-blue-700 bg-blue-50 border-blue-200 whitespace-nowrap cursor-pointer hover:bg-blue-100">
+                    Recuperar Clientes
+                </Badge>
             </CardHeader>
             <CardContent className="p-4 pt-0 flex-1 overflow-y-auto">
                 {riskClients.length > 0 ? (
@@ -121,7 +123,9 @@ const RetentionWidget = ({ data }: { data: DashboardData }) => {
                             <div key={i} className="flex items-center justify-between py-2.5 first:pt-1 group">
                                 <div className="min-w-0 pr-2">
                                     <p className="text-xs font-semibold text-slate-700 truncate">{client.name}</p>
-                                    <p className="text-[10px] text-slate-400 flex items-center gap-1"><Clock size={10}/> {client.days_ago} días ausente</p>
+                                    <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                                        <Clock size={10}/> {client.days_ago} días ausente
+                                    </p>
                                 </div>
                                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-full text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 shrink-0" title="Contactar">
                                     <Phone size={14} />
@@ -131,7 +135,7 @@ const RetentionWidget = ({ data }: { data: DashboardData }) => {
                     </div>
                 ) : (
                     <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-4">
-                        <CheckCircle2 size={24} className="mb-2 opacity-20"/><p className="text-xs">Sin alertas</p>
+                        <CheckCircle2 size={24} className="mb-2 opacity-20"/><p className="text-xs">Al día</p>
                     </div>
                 )}
             </CardContent>

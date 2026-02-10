@@ -1,114 +1,194 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import React, { useState, useEffect } from 'react';
+import { 
+  DndContext, 
+  closestCenter, 
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors 
+} from '@dnd-kit/core';
+import { 
+  arrayMove, 
+  SortableContext, 
+  sortableKeyboardCoordinates, 
+  rectSortingStrategy, 
+  useSortable 
+} from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { WIDGET_CATALOG, WidgetId, DashboardData } from './WidgetRegistry';
-import { saveDashboardLayout } from '@/app/actions/dashboard-actions';
-import { cn } from "@/lib/utils";
-import { GripVertical, AlertCircle } from 'lucide-react';
+import { GripVertical, Settings2, Plus, X } from 'lucide-react';
+import { createClient } from '@/utils/supabase/client';
+import { toast } from 'sonner';
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-function SortableItem(props: { id: string; children: React.ReactNode; colSpan: number }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.id });
+import { WIDGET_CATALOG, WidgetId, DashboardData } from './WidgetRegistry';
+
+interface DraggableDashboardProps {
+  initialLayout: string[];
+  userRole?: string;
+  data: DashboardData;
+  availableWidgets?: string[]; // Lista de todos los posibles
+}
+
+// COMPONENTE SORTABLE ITEM
+function SortableItem({ id, children, colSpan = 1, onRemove }: { id: string; children: React.ReactNode; colSpan?: number, onRemove: () => void }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id });
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    gridColumn: `span ${props.colSpan} / span ${props.colSpan}`,
     zIndex: isDragging ? 50 : 'auto',
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0.8 : 1,
   };
+
+  // Clases para grid responsivo
+  const colSpanClass = colSpan === 2 ? 'md:col-span-2' : 'md:col-span-1';
+
   return (
-    <div ref={setNodeRef} style={style} className={cn("relative group h-full transition-shadow", isDragging && "ring-2 ring-blue-500 rounded-xl")}>
-      <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-1.5 bg-white/50 hover:bg-white rounded-md cursor-grab opacity-0 group-hover:opacity-100 transition-opacity shadow-sm border border-slate-200 backdrop-blur-sm">
-        <GripVertical size={14} className="text-slate-500" />
+    <div ref={setNodeRef} style={style} className={`${colSpanClass} relative group h-full`}>
+      {/* Botón de Arrastre (visible en hover) */}
+      <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-1.5 bg-white/80 backdrop-blur-sm rounded-md shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
+        <GripVertical size={14} className="text-slate-400" />
       </div>
-      {props.children}
+      
+      {/* Botón de Eliminar (visible en hover) */}
+      {/* <div onClick={onRemove} className="absolute top-2 right-10 z-20 p-1.5 bg-white/80 backdrop-blur-sm rounded-md shadow-sm border border-slate-200 cursor-pointer text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+         <X size={14} />
+      </div> */}
+      
+      {children}
     </div>
   );
 }
 
-interface DraggableDashboardProps {
-  initialLayout: string[];
-  userRole: string;
-  data: DashboardData;
-}
-
-export default function DraggableDashboard({ initialLayout, userRole, data }: DraggableDashboardProps) {
-  const [isMounted, setIsMounted] = useState(false);
-  const [items, setItems] = useState<string[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const availableWidgets = Object.keys(WIDGET_CATALOG).filter(key => {
-        const w = WIDGET_CATALOG[key as WidgetId];
-        if (userRole === 'admin') return true;
-        return w.roles.includes('all') || w.roles.includes(userRole);
-    });
-
-    const validSaved = initialLayout.filter(id => availableWidgets.includes(id));
-    const missing = availableWidgets.filter(id => !validSaved.includes(id));
-    const finalItems = [...validSaved, ...missing];
-    
-    setItems(finalItems.length > 0 ? finalItems : availableWidgets);
-    setIsMounted(true);
-  }, [initialLayout, userRole]);
+export default function DraggableDashboard({ initialLayout, userRole = 'employee', data, availableWidgets = [] }: DraggableDashboardProps) {
+  // Limpiamos initialLayout de duplicados al inicio del estado
+  const [items, setItems] = useState<string[]>(Array.from(new Set(initialLayout)));
+  const supabase = createClient();
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const handleDragEnd = (event: any) => {
-    const { active, over } = event;
-    
-    if (active.id !== over.id) {
-      const oldIndex = items.indexOf(active.id);
-      const newIndex = items.indexOf(over.id);
-      const newOrder = arrayMove(items, oldIndex, newIndex);
-      
-      setItems(newOrder);
-      saveDashboardLayout(newOrder); 
+  // GUARDAR LAYOUT
+  const saveLayout = async (newLayout: string[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('user_settings').upsert({ 
+        user_id: user.id, 
+        dashboard_layout: newLayout 
+      }, { onConflict: 'user_id' });
     }
-    
-    setActiveId(null);
   };
 
-  if (!isMounted) return <div className="grid grid-cols-1 md:grid-cols-4 gap-6">{[1,2,3,4].map(i => <div key={i} className="h-48 bg-slate-100 animate-pulse rounded-xl border border-slate-200"></div>)}</div>;
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      setItems((items) => {
+        const oldIndex = items.indexOf(active.id);
+        const newIndex = items.indexOf(over.id);
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+        saveLayout(newOrder); // Guardar cambio
+        return newOrder;
+      });
+    }
+  };
 
-  if (items.length === 0) {
-      return (
-        <div className="col-span-4 py-16 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/30">
-          <AlertCircle className="h-10 w-10 mb-2 opacity-50"/>
-          <p>No se encontraron widgets para el rol: <span className="font-bold">{userRole}</span></p>
-        </div>
-      );
-  }
+  const toggleWidget = (widgetId: string) => {
+      setItems(prev => {
+          let newLayout;
+          if (prev.includes(widgetId)) {
+              newLayout = prev.filter(id => id !== widgetId);
+          } else {
+              newLayout = [...prev, widgetId];
+          }
+          saveLayout(newLayout);
+          return newLayout;
+      });
+  };
+
+  // Nombres amigables para el menú
+  const WIDGET_NAMES: Record<string, string> = {
+      revenue_zettle: "Facturación",
+      weather: "Clima",
+      quick_actions: "Acciones Rápidas",
+      agenda_combined: "Agenda del Día",
+      staff_status: "Equipo",
+      retention_risk: "Watchlist (Clientes)",
+      top_breeds: "Top Mascotas"
+  };
 
   return (
-    <DndContext 
-      sensors={sensors} 
-      collisionDetection={closestCenter} 
-      onDragEnd={handleDragEnd} 
-      onDragStart={(e) => setActiveId(String(e.active.id))}
-    >
-      <SortableContext items={items} strategy={rectSortingStrategy}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-min gap-4 md:gap-6 pb-20 items-start">
-          {items.map((id) => {
-            const widgetDef = WIDGET_CATALOG[id as WidgetId];
-            if (!widgetDef) return null;
-            const WidgetComponent = widgetDef.component;
-            return (
-              <SortableItem key={id} id={id} colSpan={widgetDef.defaultColSpan}>
-                <WidgetComponent data={data} />
-              </SortableItem>
-            );
-          })}
+    <div className="flex flex-col gap-4">
+        {/* BARRA DE HERRAMIENTAS (Solo visible si hay permisos o siempre) */}
+        <div className="flex justify-end">
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 gap-2 bg-white border-slate-200 text-slate-600">
+                        <Settings2 size={14} /> Personalizar
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Widgets Visibles</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {Object.keys(WIDGET_CATALOG).filter(k => !['stats_overview','live_operations'].includes(k)).map((widgetId) => {
+                        const isVisible = items.includes(widgetId);
+                        // Filtramos por rol si es necesario
+                        const widgetDef = WIDGET_CATALOG[widgetId as WidgetId];
+                        if (userRole !== 'admin' && !widgetDef.roles.includes('all') && !widgetDef.roles.includes(userRole)) return null;
+
+                        return (
+                            <DropdownMenuCheckboxItem 
+                                key={widgetId} 
+                                checked={isVisible}
+                                onCheckedChange={() => toggleWidget(widgetId)}
+                            >
+                                {WIDGET_NAMES[widgetId] || widgetId}
+                            </DropdownMenuCheckboxItem>
+                        );
+                    })}
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
-      </SortableContext>
-      <DragOverlay>
-        {activeId ? <div className="opacity-90 scale-105 cursor-grabbing shadow-2xl rounded-xl overflow-hidden bg-white ring-2 ring-blue-500 h-[150px] flex items-center justify-center font-bold text-blue-600">Moviendo...</div> : null}
-      </DragOverlay>
-    </DndContext>
+
+        {/* GRID PRINCIPAL */}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={items} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 pb-10">
+            {items.map((id) => {
+                const widgetId = id as WidgetId;
+                const widgetDef = WIDGET_CATALOG[widgetId];
+
+                // Si el widget no existe en el catálogo (ej. nombre viejo), no lo renderizamos
+                if (!widgetDef) return null;
+
+                const Component = widgetDef.component;
+                return (
+                <SortableItem key={id} id={id} colSpan={widgetDef.defaultColSpan} onRemove={() => toggleWidget(id)}>
+                    <Component data={data} />
+                </SortableItem>
+                );
+            })}
+            </div>
+        </SortableContext>
+        </DndContext>
+    </div>
   );
 }
