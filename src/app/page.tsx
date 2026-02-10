@@ -17,24 +17,37 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   // ─────────────────────────────────────────────
-  // 1. ROL Y NOMBRE
+  // 1. ROL Y NOMBRE (desde user_roles para el nombre de pila)
   // ─────────────────────────────────────────────
   let role = 'employee';
   let displayName = 'Usuario';
 
   if (user) {
-    const { data: emp } = await supabase
-      .from('employees')
+    // Primero intentar user_roles (nombre de pila preferido)
+    const { data: userRole } = await supabase
+      .from('user_roles')
       .select('role, first_name')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single();
 
-    if (emp) {
-      role = emp.role;
-      displayName = emp.first_name;
+    if (userRole) {
+      role = userRole.role || 'employee';
+      displayName = userRole.first_name || 'Usuario';
     } else {
-      displayName = user.user_metadata?.first_name || 'Admin';
-      role = 'admin';
+      // Fallback a employees si no existe en user_roles
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('role, first_name')
+        .eq('id', user.id)
+        .single();
+
+      if (emp) {
+        role = emp.role;
+        displayName = emp.first_name;
+      } else {
+        displayName = user.user_metadata?.first_name || 'Admin';
+        role = 'admin';
+      }
     }
   }
 
@@ -143,36 +156,59 @@ export default async function DashboardPage() {
     };
   };
 
-  // B. AGENDA
+  // B. AGENDA — Consulta desde appointments (filtros directos, sin problemas PostgREST)
   const getAgendaData = async () => {
     const { data, error } = await supabase
-      .from('appointment_services')
+      .from('appointments')
       .select(`
-        id, service_name, category, start_time,
-        services (name, category),
-        appointments!inner (id, start_time, status, pets (name))
+        id, start_time, status,
+        pets (name),
+        appointment_services (id, service_name, category, services (name, category))
       `)
-      .gte('appointments.start_time', todayStartISO)
-      .lte('appointments.start_time', todayEndISO)
-      .neq('appointments.status', 'cancelled');
+      .gte('start_time', todayStartISO)
+      .lte('start_time', todayEndISO)
+      .neq('status', 'cancelled');
 
-    if (error || !data) return [];
+    if (error) {
+      console.error('[Dashboard] Error agenda:', error.message);
+      return [];
+    }
+    if (!data) return [];
 
-    return data.map((item: any) => {
-      const petsData = item.appointments?.pets;
+    // Aplanar: cada appointment_service se convierte en un item de agenda
+    const items: any[] = [];
+    for (const appt of data) {
+      const petsData = appt.pets as any;
       const petName = Array.isArray(petsData) ? petsData[0]?.name : petsData?.name;
-      const svcName = item.service_name || item.services?.name || 'Servicio';
-      const svcCat = (item.category || item.services?.category || 'baño').toLowerCase();
+      const services = appt.appointment_services as any[];
 
-      return {
-        id: item.id,
-        start_time: item.appointments?.start_time,
-        pet_name: petName || 'Mascota',
-        status: item.appointments?.status,
-        service_name: svcName,
-        service_category: svcCat,
-      };
-    });
+      if (services && services.length > 0) {
+        for (const svc of services) {
+          const svcName = svc.service_name || svc.services?.name || 'Servicio';
+          const svcCat = (svc.category || svc.services?.category || 'baño').toLowerCase();
+          items.push({
+            id: svc.id,
+            start_time: appt.start_time,
+            pet_name: petName || 'Mascota',
+            status: appt.status,
+            service_name: svcName,
+            service_category: svcCat,
+          });
+        }
+      } else {
+        // Cita sin servicios desglosados — mostrar como genérica
+        items.push({
+          id: appt.id,
+          start_time: appt.start_time,
+          pet_name: petName || 'Mascota',
+          status: appt.status,
+          service_name: 'Servicio',
+          service_category: 'baño',
+        });
+      }
+    }
+
+    return items;
   };
 
   // C. RETENCIÓN
@@ -295,11 +331,12 @@ export default async function DashboardPage() {
   // ─────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full w-full bg-slate-50/50 overflow-y-auto">
-      <div className="max-w-[1600px] mx-auto w-full p-4 md:p-8 space-y-6">
+      {/* pt-16 en móvil para no taparse con el hamburger/navbar */}
+      <div className="max-w-[1600px] mx-auto w-full p-4 pt-16 md:pt-8 md:p-8 space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pb-2">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
               {greeting}, {displayName}
             </h1>
             <p className="text-slate-500 mt-1 text-sm capitalize">{dateContext}</p>

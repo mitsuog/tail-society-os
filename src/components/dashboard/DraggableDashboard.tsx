@@ -68,18 +68,19 @@ function SortableItem({ id, children, colSpan = 1 }: {
     transition,
     zIndex: isDragging ? 50 : 'auto' as any,
     opacity: isDragging ? 0.85 : 1,
-    touchAction: 'none' as const,
+    // NO touchAction: 'none' aquí — bloquea el scroll nativo en móvil
   };
 
   const colSpanClass = colSpan === 2 ? 'md:col-span-2' : 'md:col-span-1';
 
   return (
-    <div ref={setNodeRef} style={style} className={`${colSpanClass} relative group h-full select-none`}>
-      {/* Handle — visible on hover/focus */}
+    <div ref={setNodeRef} style={style} className={`${colSpanClass} relative group h-full`}>
+      {/* Handle — solo este elemento bloquea touch para drag, NO el widget entero */}
       <div
         {...attributes}
         {...listeners}
-        className="absolute top-2.5 right-2.5 z-20 p-1.5 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm border border-slate-200/80 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-visible:opacity-100 touch-manipulation transition-opacity duration-200"
+        style={{ touchAction: 'none' }}
+        className="absolute top-2.5 right-2.5 z-20 p-1.5 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm border border-slate-200/80 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-200"
         aria-label="Arrastrar widget"
       >
         <GripVertical size={14} className="text-slate-400" />
@@ -158,7 +159,9 @@ export default function DraggableDashboard({
       activationConstraint: { distance: 8 }
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 }
+      // 300ms delay + 8px tolerance: scroll funciona normal,
+      // solo arrastra si mantienes presionado el handle
+      activationConstraint: { delay: 300, tolerance: 8 }
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates
@@ -235,7 +238,7 @@ export default function DraggableDashboard({
       {/* Grid de widgets */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 pb-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 pb-20 md:pb-10">
             {items.map((id) => {
               const widgetDef = WIDGET_CATALOG[id as WidgetId];
               if (!widgetDef) return null;
