@@ -16,7 +16,8 @@ import {
   Scissors,     
   Users,
   ShieldCheck,
-  CalendarPlus
+  CalendarPlus,
+  UserCircle // Icono para Staff
 } from 'lucide-react'; 
 import { cn } from '@/lib/utils';
 import AddClientDialog from '@/components/AddClientDialog'; 
@@ -29,7 +30,7 @@ interface SidebarProps {
   isMobileOpen: boolean;
   toggleDesktopCollapse: () => void;
   closeMobileMenu: () => void;
-  userRole?: string; // <--- NUEVO PROP
+  userRole?: string;
 }
 
 export default function Sidebar({ 
@@ -37,7 +38,7 @@ export default function Sidebar({
   isMobileOpen, 
   toggleDesktopCollapse,
   closeMobileMenu,
-  userRole = 'employee' // Por seguridad, default al más bajo
+  userRole = 'employee'
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -46,9 +47,7 @@ export default function Sidebar({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const supabase = createClient();
 
-  // --- LÓGICA DE PERMISOS ---
-  
-  // 1. Definir quién puede ver qué menú
+  // --- 1. CONFIGURACIÓN DEL MENÚ ---
   const allMenuItems = [
     { 
       name: 'Dashboard', 
@@ -62,30 +61,34 @@ export default function Sidebar({
       href: '/appointments', 
       allowedRoles: ['admin', 'receptionist', 'employee'] 
     },
+    // --- NUEVO: CLIENTES ---
+    { 
+      name: 'Clientes', 
+      icon: Users, 
+      href: '/admin/clients', 
+      allowedRoles: ['admin', 'receptionist'] 
+    },
     { 
       name: 'Servicios', 
       icon: Scissors, 
       href: '/admin/services', 
-      allowedRoles: ['admin'] // Solo Admin configura servicios
+      allowedRoles: ['admin'] 
     },
     { 
       name: 'Equipo', 
-      icon: Users, 
+      icon: UserCircle, 
       href: '/admin/staff', 
-      allowedRoles: ['admin'] // Solo Admin ve RRHH
+      allowedRoles: ['admin'] 
     },
     { 
       name: 'Admin', 
       icon: ShieldCheck, 
       href: '/admin/users', 
-      allowedRoles: ['admin'] // Solo Admin gestiona usuarios
+      allowedRoles: ['admin'] 
     },
   ];
 
-  // 2. Filtrar el menú basado en el rol actual
   const visibleMenuItems = allMenuItems.filter(item => item.allowedRoles.includes(userRole));
-
-  // 3. Definir si puede crear cosas (Staff no puede, Admin/Recep sí)
   const canCreate = ['admin', 'receptionist'].includes(userRole);
 
   const handleLogout = async () => {
@@ -106,10 +109,12 @@ export default function Sidebar({
     }
   };
 
+  // Ocultar sidebar en el Kiosco
   if (pathname?.startsWith('/checkin')) return null;
 
   return (
     <>
+      {/* OVERLAY MÓVIL (Fondo oscuro al abrir menú en celular) */}
       <div 
         className={cn(
           "fixed inset-0 bg-slate-900/60 z-40 md:hidden transition-opacity backdrop-blur-sm",
@@ -118,10 +123,13 @@ export default function Sidebar({
         onClick={closeMobileMenu}
       />
 
+      {/* SIDEBAR CONTAINER */}
       <aside 
         className={cn(
           "fixed md:sticky top-0 left-0 z-50 h-screen bg-slate-950 text-slate-300 border-r border-slate-800 transition-all duration-300 flex flex-col shadow-2xl",
+          // Ancho dinámico en Desktop
           isDesktopCollapsed ? "w-[80px]" : "w-[260px]",
+          // Posición dinámica en Móvil (slide-in)
           isMobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
@@ -142,6 +150,7 @@ export default function Sidebar({
              </div>
           )}
           
+          {/* Logo versión colapsada (solo icono) */}
           {isDesktopCollapsed && (
             <div className="w-full flex justify-center">
                <div className="relative w-10 h-10 group">
@@ -156,10 +165,12 @@ export default function Sidebar({
             </div>
           )}
 
+          {/* Botón cerrar en Móvil */}
           <button onClick={closeMobileMenu} className="md:hidden text-slate-400 hover:text-white">
             <X size={24} />
           </button>
 
+          {/* Botón colapsar en Desktop */}
           <button 
             onClick={toggleDesktopCollapse}
             className="hidden md:flex absolute -right-3 top-8 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white rounded-full p-1 shadow-lg hover:scale-110 transition-all z-50"
@@ -168,15 +179,18 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* NAVIGATION */}
+        {/* NAVIGATION LIST */}
         <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 custom-scrollbar">
           
-          {/* BOTONES DE ACCIÓN (Solo Admin y Recepción) */}
+          {/* BOTONES DE ACCIÓN RÁPIDA (Responsive) */}
           {canCreate && (
             <>
-              {/* BOTÓN NUEVA CITA */}
+              {/* Nueva Cita */}
               <button 
-                onClick={() => setAppointmentModalOpen(true)}
+                onClick={() => {
+                    setAppointmentModalOpen(true);
+                    closeMobileMenu(); // Cerrar menú al hacer click en móvil
+                }}
                 className={cn(
                   "flex items-center gap-3 w-full bg-slate-100 hover:bg-white text-slate-900 transition-all shadow-lg shadow-white/5 mb-3 group relative overflow-hidden ring-1 ring-slate-200",
                   isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
@@ -186,9 +200,12 @@ export default function Sidebar({
                 {!isDesktopCollapsed && <span className="font-bold text-sm">Nueva Cita</span>}
               </button>
 
-              {/* BOTÓN NUEVO CLIENTE */}
+              {/* Nuevo Cliente */}
               <button 
-                onClick={() => setClientModalOpen(true)}
+                onClick={() => {
+                    setClientModalOpen(true);
+                    closeMobileMenu();
+                }}
                 className={cn(
                   "flex items-center gap-3 w-full bg-purple-600 hover:bg-purple-500 text-white transition-all shadow-lg shadow-purple-900/20 mb-6 group relative overflow-hidden",
                   isDesktopCollapsed ? "justify-center p-3 rounded-xl aspect-square" : "px-4 py-3 rounded-xl"
@@ -200,6 +217,7 @@ export default function Sidebar({
             </>
           )}
 
+          {/* LISTA DE ITEMS */}
           <div className="space-y-1">
             {visibleMenuItems.map((item) => {
               const isActive = item.href === '/' 
@@ -210,6 +228,7 @@ export default function Sidebar({
                 <Link 
                   key={item.name}
                   href={item.href}
+                  onClick={closeMobileMenu} // Cerrar al navegar en móvil
                   className={cn(
                     "group flex items-center rounded-xl transition-all relative overflow-hidden",
                     isDesktopCollapsed ? "justify-center p-3" : "px-4 py-3 gap-3",
@@ -244,8 +263,10 @@ export default function Sidebar({
 
           <div className="my-4 border-t border-slate-800 mx-2"></div>
 
+          {/* KIOSCO LINK */}
           <Link 
             href="/checkin" 
+            onClick={closeMobileMenu}
             className={cn(
               "group flex items-center rounded-xl transition-all font-medium text-sm relative text-slate-400 hover:bg-slate-800 hover:text-green-400", 
               isDesktopCollapsed ? "justify-center p-3" : "px-4 py-3 gap-3"
@@ -259,7 +280,7 @@ export default function Sidebar({
           </Link>
         </nav>
 
-        {/* MODALES */}
+        {/* MODALES GLOBALES DEL SIDEBAR */}
         <AddClientDialog 
           isOpen={isClientModalOpen} 
           onOpenChange={setClientModalOpen} 
@@ -270,6 +291,7 @@ export default function Sidebar({
           onOpenChange={setAppointmentModalOpen}
         />
 
+        {/* LOGOUT AREA */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/30 shrink-0">
           <button 
             onClick={handleLogout}

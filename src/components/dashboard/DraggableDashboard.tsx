@@ -19,8 +19,8 @@ function SortableItem(props: { id: string; children: React.ReactNode; colSpan: n
     opacity: isDragging ? 0.3 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} className={cn("relative group h-full", isDragging && "ring-2 ring-blue-500 rounded-xl")}>
-      <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-1.5 bg-white/90 rounded-md cursor-grab opacity-0 group-hover:opacity-100 transition-opacity shadow-sm border border-slate-200 hover:bg-blue-50">
+    <div ref={setNodeRef} style={style} className={cn("relative group h-full transition-shadow", isDragging && "ring-2 ring-blue-500 rounded-xl")}>
+      <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-1.5 bg-white/50 hover:bg-white rounded-md cursor-grab opacity-0 group-hover:opacity-100 transition-opacity shadow-sm border border-slate-200 backdrop-blur-sm">
         <GripVertical size={14} className="text-slate-500" />
       </div>
       {props.children}
@@ -61,15 +61,16 @@ export default function DraggableDashboard({ initialLayout, userRole, data }: Dr
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
+    
     if (active.id !== over.id) {
-      setItems((items) => {
-        const oldIndex = items.indexOf(active.id);
-        const newIndex = items.indexOf(over.id);
-        const newOrder = arrayMove(items, oldIndex, newIndex);
-        saveDashboardLayout(newOrder);
-        return newOrder;
-      });
+      const oldIndex = items.indexOf(active.id);
+      const newIndex = items.indexOf(over.id);
+      const newOrder = arrayMove(items, oldIndex, newIndex);
+      
+      setItems(newOrder);
+      saveDashboardLayout(newOrder); 
     }
+    
     setActiveId(null);
   };
 
@@ -85,9 +86,13 @@ export default function DraggableDashboard({ initialLayout, userRole, data }: Dr
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={(e) => setActiveId(String(e.active.id))}>
+    <DndContext 
+      sensors={sensors} 
+      collisionDetection={closestCenter} 
+      onDragEnd={handleDragEnd} 
+      onDragStart={(e) => setActiveId(String(e.active.id))}
+    >
       <SortableContext items={items} strategy={rectSortingStrategy}>
-        {/* CSS KEY: items-start prevents vertical stretching. auto-rows-min lets cards be their natural height. */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-min gap-4 md:gap-6 pb-20 items-start">
           {items.map((id) => {
             const widgetDef = WIDGET_CATALOG[id as WidgetId];
