@@ -19,7 +19,7 @@ function SortableItem(props: { id: string; children: React.ReactNode; colSpan: n
     opacity: isDragging ? 0.3 : 1,
   };
   return (
-    <div ref={setNodeRef} style={style} className={cn("relative group h-full transition-shadow", isDragging && "ring-2 ring-blue-500 rounded-xl")}>
+    <div ref={setNodeRef} style={style} className={cn("relative group h-full", isDragging && "ring-2 ring-blue-500 rounded-xl")}>
       <div {...attributes} {...listeners} className="absolute top-2 right-2 z-20 p-1.5 bg-white/90 rounded-md cursor-grab opacity-0 group-hover:opacity-100 transition-opacity shadow-sm border border-slate-200 hover:bg-blue-50">
         <GripVertical size={14} className="text-slate-500" />
       </div>
@@ -48,10 +48,9 @@ export default function DraggableDashboard({ initialLayout, userRole, data }: Dr
 
     const validSaved = initialLayout.filter(id => availableWidgets.includes(id));
     const missing = availableWidgets.filter(id => !validSaved.includes(id));
-    
     const finalItems = [...validSaved, ...missing];
-    setItems(finalItems.length > 0 ? finalItems : availableWidgets);
     
+    setItems(finalItems.length > 0 ? finalItems : availableWidgets);
     setIsMounted(true);
   }, [initialLayout, userRole]);
 
@@ -86,15 +85,10 @@ export default function DraggableDashboard({ initialLayout, userRole, data }: Dr
   }
 
   return (
-    <DndContext 
-      sensors={sensors} 
-      collisionDetection={closestCenter} 
-      onDragEnd={handleDragEnd} 
-      // FIX: Convertimos a String explícitamente para satisfacer a TypeScript
-      onDragStart={(e) => setActiveId(String(e.active.id))}
-    >
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={(e) => setActiveId(String(e.active.id))}>
       <SortableContext items={items} strategy={rectSortingStrategy}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-fr gap-4 md:gap-6 pb-20">
+        {/* CSS KEY: items-start prevents vertical stretching. auto-rows-min lets cards be their natural height. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-min gap-4 md:gap-6 pb-20 items-start">
           {items.map((id) => {
             const widgetDef = WIDGET_CATALOG[id as WidgetId];
             if (!widgetDef) return null;
@@ -108,7 +102,7 @@ export default function DraggableDashboard({ initialLayout, userRole, data }: Dr
         </div>
       </SortableContext>
       <DragOverlay>
-        {activeId ? <div className="opacity-90 scale-105 cursor-grabbing shadow-2xl rounded-xl overflow-hidden bg-white ring-2 ring-blue-500 h-full p-4 flex items-center justify-center text-blue-600 font-bold">Moviendo...</div> : null}
+        {activeId ? <div className="opacity-90 scale-105 cursor-grabbing shadow-2xl rounded-xl overflow-hidden bg-white ring-2 ring-blue-500 h-[150px] flex items-center justify-center font-bold text-blue-600">Moviendo...</div> : null}
       </DragOverlay>
     </DndContext>
   );
