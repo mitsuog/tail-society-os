@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { CalendarPlus, Search } from 'lucide-react';
 import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog';
-import { startOfWeek, endOfWeek, subWeeks, format, parseISO } from 'date-fns';
+import { startOfWeek, endOfWeek, subWeeks, format, startOfDay, endOfDay, startOfMonth } from 'date-fns';
 import DraggableDashboard from '@/components/dashboard/DraggableDashboard';
 import { WIDGET_CATALOG } from '@/components/dashboard/WidgetRegistry';
 
@@ -22,7 +22,6 @@ export default async function DashboardPage() {
           role = emp.role;
           displayName = emp.first_name;
       } else {
-          // Si falló el enlace, mostramos el nombre de auth pero rol básico
           displayName = user.user_metadata?.first_name || 'Admin';
       }
   }
@@ -37,29 +36,32 @@ export default async function DashboardPage() {
     return w.roles.includes('all') || w.roles.includes(role);
   });
 
-  // 3. Layout (Forzamos default si está vacío)
-  let userLayout: string[] = [];
+  // 3. Layout
+  let userLayout: string[] = ['stats_overview', 'live_operations', 'quick_actions', 'staff_status', 'agenda_timeline', 'weather'];
+  
   if (user) {
     const { data: settings } = await supabase.from('user_settings').select('dashboard_layout').eq('user_id', user.id).single();
-    if (settings?.dashboard_layout?.length > 0) {
+    if (settings && settings.dashboard_layout && settings.dashboard_layout.length > 0) {
       userLayout = settings.dashboard_layout;
-    } else {
-      userLayout = ['stats_overview', 'live_operations', 'quick_actions', 'staff_status', 'agenda_timeline', 'weather'];
     }
   }
 
   // 4. Fechas
   const now = new Date();
-  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Monterrey' });
-  const todayStart = `${todayStr}T00:00:00-06:00`;
-  const todayEnd = `${todayStr}T23:59:59.999-06:00`;
-  const monthStart = `${todayStr.substring(0, 7)}-01T00:00:00-06:00`;
+  const todayStart = startOfDay(now).toISOString();
+  const todayEnd = endOfDay(now).toISOString();
+  const monthStart = format(startOfMonth(now), "yyyy-MM-dd'T'00:00:00");
+
   const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'00:00:00");
   const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd'T'23:59:59");
   const prevWeekStart = format(subWeeks(startOfWeek(now, { weekStartsOn: 1 }), 1), "yyyy-MM-dd'T'00:00:00");
   const prevWeekEnd = format(subWeeks(endOfWeek(now, { weekStartsOn: 1 }), 1), "yyyy-MM-dd'T'23:59:59");
 
-  // 5. FETCHING REAL
+  // ---------------------------------------------------------------------------
+  // 5. FETCHING
+  // ---------------------------------------------------------------------------
+
+  // A. Métricas Financieras
   const getSimpleMetrics = async (start: string, end: string) => {
       const { data } = await supabase.from('view_finance_appointments').select('final_price, status').gte('date', start).lte('date', end);
       if (!data) return { revenue: 0, count: 0, pending: 0 };
@@ -69,19 +71,88 @@ export default async function DashboardPage() {
       return { revenue, count: valid.length, pending: pending.length };
   };
 
-  const getAgendaData = async () => {
-    const { data } = await supabase.from('appointments').select(`id, start_time, status, pets(name), appointment_services(services(name, category))`).gte('start_time', todayStart).lte('start_time', todayEnd).neq('status', 'cancelled');
-    if (!data) return [];
-    return data.map((item: any) => ({
-        id: item.id, start_time: item.start_time, pet_name: item.pets?.name || 'Mascota', status: item.status,
-        service_name: item.appointment_services?.[0]?.services?.name || 'Servicio',
-        service_category: item.appointment_services?.[0]?.services?.category || 'other'
-    }));
+  // B. Agenda y Operaciones
+  const getServicesData = async () => {
+    const { data, error } = await supabase
+      .from('appointment_services')
+      .select(`
+        id,
+        service_name,
+        category,
+        appointments!inner (
+          id,
+          start_time,
+          status,
+          pets (name)
+        )
+      `)
+      .gte('appointments.start_time', todayStart)
+      .lte('appointments.start_time', todayEnd)
+      .neq('appointments.status', 'cancelled');
+
+    if (error) {
+      console.error("Error fetching services:", error);
+      return [];
+    }
+    return data;
   };
 
+  const servicesRaw = await getServicesData();
+
+  // Procesar Agenda
+  const agenda = servicesRaw.map((item: any) => {
+      // Manejo seguro de pets (array u objeto)
+      const petsData = item.appointments?.pets as any;
+      const petName = Array.isArray(petsData) 
+          ? petsData[0]?.name 
+          : petsData?.name;
+
+      return {
+          id: item.id,
+          start_time: item.appointments?.start_time,
+          pet_name: petName || 'Mascota',
+          status: item.appointments?.status,
+          service_name: item.service_name,
+          service_category: (item.category || 'baño').toLowerCase()
+      };
+  });
+
+  // Procesar Operaciones en Vivo
+  const processLiveOperations = () => {
+    let waiting = 0, bathing = 0, cutting = 0, ready = 0;
+    
+    const processedAppts = new Set();
+    
+    servicesRaw.forEach((item: any) => {
+      const apptId = item.appointments.id;
+      const status = item.appointments.status;
+      const category = (item.category || '').toLowerCase();
+
+      // Estados Globales de la Cita
+      if (!processedAppts.has(apptId)) {
+        if (status === 'checked_in' || status === 'confirmed') waiting++;
+        if (status === 'completed') ready++;
+        processedAppts.add(apptId);
+      }
+
+      // Estados de Proceso (por servicio)
+      if (status === 'in_process' || status === 'attended') {
+        if (category.includes('corte') || category.includes('cut') || category.includes('estilo')) {
+          cutting++;
+        } else {
+          bathing++;
+        }
+      }
+    });
+
+    return { waiting, bathing, cutting, ready, total: (waiting + bathing + cutting + ready) };
+  };
+
+  const operations = processLiveOperations();
+
+  // C. Semanal
   const getWeeklyData = async () => {
     const { data: curr } = await supabase.from('view_finance_appointments').select('date, final_price').gte('date', weekStart).lte('date', weekEnd).in('status', ['completed', 'attended']);
-    const { data: prev } = await supabase.from('view_finance_appointments').select('final_price').gte('date', prevWeekStart).lte('date', prevWeekEnd).in('status', ['completed', 'attended']);
     const dailyTotals = new Array(7).fill(0);
     const daysMap = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
     curr?.forEach((a: any) => {
@@ -89,50 +160,20 @@ export default async function DashboardPage() {
         dailyTotals[d] += (Number(a.final_price) || 0);
     });
     const totalWeek = dailyTotals.reduce((a, b) => a + b, 0);
-    const prevTotal = prev?.reduce((a: any, b: any) => a + (Number(b.final_price) || 0), 0) || 0;
-    let growth = 0;
-    if (prevTotal > 0) growth = ((totalWeek - prevTotal) / prevTotal) * 100;
-    else if (totalWeek > 0) growth = 100;
     const maxVal = Math.max(...dailyTotals, 1);
-    return { weeklyData: dailyTotals.map((val, i) => ({ day: daysMap[i], value: val, heightPct: Math.round((val / maxVal) * 100) })), growthPercentage: growth, formattedRevenue: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(totalWeek) };
-  };
-
-  // --- NUEVA LÓGICA: OPERACIONES EN VIVO ---
-  const getLiveOperations = async () => {
-    // Buscar citas activas de HOY
-    const { data } = await supabase
-        .from('appointments')
-        .select(`status, appointment_services(services(category))`)
-        .gte('start_time', todayStart)
-        .lte('start_time', todayEnd)
-        .neq('status', 'cancelled');
     
-    let waiting = 0, bathing = 0, cutting = 0, ready = 0;
-
-    data?.forEach((a: any) => {
-        const cat = a.appointment_services?.[0]?.services?.category?.toLowerCase() || '';
-        // Lógica de mapeo de estados
-        if (a.status === 'checked_in' || a.status === 'confirmed') waiting++;
-        else if (a.status === 'completed') ready++; // Asumimos completado hoy = listo/entregado
-        else if (a.status === 'in_process' || a.status === 'attended') {
-            if (cat.includes('corte') || cat.includes('cut')) cutting++;
-            else bathing++; // Default a baño si está en proceso y no es corte
-        }
-    });
-
-    return { waiting, bathing, cutting, ready, total: (waiting + bathing + cutting + ready) };
+    return { 
+        weeklyData: dailyTotals.map((val, i) => ({ day: daysMap[i], value: val, heightPct: Math.round((val / maxVal) * 100) })), 
+        growthPercentage: 0, 
+        formattedRevenue: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(totalWeek) 
+    };
   };
 
-  // --- NUEVA LÓGICA: ESTADO DEL STAFF ---
+  // D. Estado del Staff (CORREGIDO EL ERROR DE TIPADO AQUÍ)
   const getStaffStatus = async () => {
-    // 1. Obtener empleados activos
     const { data: employees } = await supabase.from('employees').select('id, first_name').eq('active', true);
     if (!employees) return [];
 
-    // 2. Buscar si tienen una cita activa AHORA MISMO
-    const nowISO = new Date().toISOString();
-    // Nota: Como comprobar rangos exactos es complejo en una sola query simple,
-    // traemos las citas "en proceso" de hoy y cruzamos datos en JS.
     const { data: activeAppts } = await supabase
         .from('appointments')
         .select('employee_id, pets(name)')
@@ -142,22 +183,29 @@ export default async function DashboardPage() {
 
     return employees.map(emp => {
         const activeJob = activeAppts?.find((a: any) => a.employee_id === emp.id);
+        
+        // --- CORRECCIÓN AQUÍ ---
+        // Forzamos pets como 'any' para evitar el error 'property name does not exist on type never'
+        const petsData = activeJob?.pets as any; 
+        
+        const petName = petsData 
+            ? (Array.isArray(petsData) ? petsData[0]?.name : petsData.name)
+            : undefined;
+
         return {
             id: emp.id,
             name: emp.first_name,
-            status: activeJob ? 'busy' : 'free', // Simple: Si tiene cita en proceso = busy
-            current_pet: activeJob?.pets?.name
+            status: (activeJob ? 'busy' : 'free') as 'busy' | 'free' | 'break',
+            current_pet: petName
         };
     });
   };
 
-  // EJECUCIÓN PARALELA
-  const [todayM, monthM, agenda, weekly, operations, staff] = await Promise.all([
+  // 6. EJECUCIÓN FINAL
+  const [todayM, monthM, weekly, staff] = await Promise.all([
       getSimpleMetrics(todayStart, todayEnd),
       getSimpleMetrics(monthStart, todayEnd),
-      getAgendaData(),
       getWeeklyData(),
-      getLiveOperations(),
       getStaffStatus()
   ]);
 
@@ -165,7 +213,10 @@ export default async function DashboardPage() {
     today: { ...todayM, formattedRevenue: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(todayM.revenue) },
     month: { ...monthM, formattedRevenue: new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(monthM.revenue) },
     recentClients: [],
-    agenda, weekly, operations, staff
+    agenda,       
+    weekly, 
+    operations,
+    staff
   };
 
   return (
