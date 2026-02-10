@@ -22,6 +22,7 @@ import { es } from 'date-fns/locale';
 // ============================================================
 export type AgendaItem = {
   id: string;
+  appointment_id: string;
   start_time: string;
   pet_name: string;
   status: string;
@@ -248,15 +249,55 @@ const RetentionWidget = ({ data }: { data: DashboardData }) => {
 };
 
 // ============================================================
-// 4. AGENDA DEL DÍA
+// 4. AGENDA DEL DÍA (agrupada por mascota)
 // ============================================================
-const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
-  // Soporta tanto array directo como objeto legacy
-  const items: AgendaItem[] = Array.isArray(data.agenda) ? data.agenda : [];
-  const sortedItems = [...items].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
-  const completed = sortedItems.filter(a => a.status === 'completed').length;
-  const inProcess = sortedItems.filter(a => a.status === 'in_process').length;
+// Helper: info visual por categoría de servicio
+const svcCatConfig = (cat: string) => {
+  const c = cat?.toLowerCase() || '';
+  if (c === 'cut' || c.includes('corte')) return { icon: Scissors, bg: 'bg-purple-100', text: 'text-purple-600', label: 'Corte' };
+  if (c === 'bath' || c.includes('baño')) return { icon: Droplets, bg: 'bg-cyan-100', text: 'text-cyan-600', label: 'Baño' };
+  if (c === 'addon' || c.includes('adicional')) return { icon: Sparkles, bg: 'bg-amber-100', text: 'text-amber-600', label: 'Extra' };
+  return { icon: PawPrint, bg: 'bg-slate-100', text: 'text-slate-500', label: 'Servicio' };
+};
+
+type GroupedPet = {
+  appointment_id: string;
+  pet_name: string;
+  start_time: string;
+  status: string;
+  services: { name: string; category: string }[];
+};
+
+const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
+  const items: AgendaItem[] = Array.isArray(data.agenda) ? data.agenda : [];
+
+  // Agrupar por appointment_id → 1 fila por mascota
+  const grouped: GroupedPet[] = [];
+  const seen = new Map<string, GroupedPet>();
+
+  for (const item of items) {
+    const key = item.appointment_id;
+    if (seen.has(key)) {
+      seen.get(key)!.services.push({ name: item.service_name, category: item.service_category });
+    } else {
+      const entry: GroupedPet = {
+        appointment_id: key,
+        pet_name: item.pet_name,
+        start_time: item.start_time,
+        status: item.status,
+        services: [{ name: item.service_name, category: item.service_category }],
+      };
+      seen.set(key, entry);
+      grouped.push(entry);
+    }
+  }
+
+  // Ordenar por hora
+  grouped.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+  const completed = grouped.filter(g => g.status === 'completed').length;
+  const inProcess = grouped.filter(g => g.status === 'in_process').length;
 
   return (
     <Card className="h-full shadow-sm border-slate-200 flex flex-col bg-white overflow-hidden min-h-[300px]">
@@ -274,53 +315,52 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
             </Badge>
           )}
           <Badge variant="outline" className="bg-white text-[10px] h-5 font-mono tabular-nums">
-            {completed}/{sortedItems.length}
+            {completed}/{grouped.length}
           </Badge>
         </div>
       </CardHeader>
 
       <CardContent className="p-0 flex-1 overflow-y-auto bg-white">
-        {sortedItems.length > 0 ? (
+        {grouped.length > 0 ? (
           <div className="divide-y divide-slate-100">
-            {sortedItems.map((appt) => {
-              const date = parseISO(appt.start_time);
-              const isCut = appt.service_category?.toLowerCase().includes('corte') || appt.service_category === 'cut';
-              const isDone = appt.status === 'completed';
-              const isActive = appt.status === 'in_process';
+            {grouped.map((pet) => {
+              const date = parseISO(pet.start_time);
+              const isDone = pet.status === 'completed';
+              const isActive = pet.status === 'in_process' || pet.status === 'in_progress';
 
               return (
-                <div key={appt.id} className={cn(
+                <div key={pet.appointment_id} className={cn(
                   "flex items-center gap-3 p-3 transition-colors",
                   isDone && "opacity-40",
                   isActive && "bg-blue-50/50 border-l-2 border-l-blue-500",
                   !isDone && !isActive && "hover:bg-slate-50"
                 )}>
                   {/* Hora */}
-                  <div className="flex flex-col items-center justify-center w-12 shrink-0">
+                  <div className="flex flex-col items-center justify-center w-11 shrink-0">
                     <span className={cn(
-                      "text-sm font-bold tabular-nums",
+                      "text-sm font-bold tabular-nums leading-none",
                       isActive ? "text-blue-600" : "text-slate-700"
                     )}>
                       {format(date, 'HH:mm')}
                     </span>
                   </div>
 
-                  {/* Separador visual */}
+                  {/* Barra lateral status */}
                   <div className={cn(
-                    "w-0.5 h-8 rounded-full shrink-0",
+                    "w-0.5 self-stretch rounded-full shrink-0",
                     isDone ? "bg-emerald-300" : isActive ? "bg-blue-400" : "bg-slate-200"
                   )} />
 
-                  {/* Info */}
+                  {/* Info mascota + servicios como iconos */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <p className={cn(
                         "text-xs font-bold truncate",
-                        isDone ? "text-slate-500 line-through" : "text-slate-800"
+                        isDone ? "text-slate-400 line-through" : "text-slate-800"
                       )}>
-                        {appt.pet_name}
+                        {pet.pet_name}
                       </p>
-                      {isDone && <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />}
+                      {isDone && <CheckCircle2 size={11} className="text-emerald-500 shrink-0" />}
                       {isActive && (
                         <span className="relative flex h-2 w-2 shrink-0">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
@@ -328,15 +368,27 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
                         </span>
                       )}
                     </div>
-                    <Badge variant="secondary" className={cn(
-                      "text-[9px] h-4 px-1.5 rounded mt-1 font-normal",
-                      isCut
-                        ? "bg-purple-50 text-purple-700 border-purple-100"
-                        : "bg-cyan-50 text-cyan-700 border-cyan-100"
-                    )}>
-                      {isCut ? <Scissors size={8} className="mr-1" /> : <Droplets size={8} className="mr-1" />}
-                      <span className="truncate max-w-[140px]">{appt.service_name}</span>
-                    </Badge>
+
+                    {/* Servicios como chips de color */}
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      {pet.services.map((svc, i) => {
+                        const cfg = svcCatConfig(svc.category);
+                        const Icon = cfg.icon;
+                        return (
+                          <span
+                            key={i}
+                            title={svc.name}
+                            className={cn(
+                              "inline-flex items-center gap-0.5 h-[18px] px-1.5 rounded text-[9px] font-medium",
+                              cfg.bg, cfg.text
+                            )}
+                          >
+                            <Icon size={9} />
+                            <span className="truncate max-w-[80px]">{svc.name}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               );

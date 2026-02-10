@@ -190,6 +190,7 @@ export default async function DashboardPage() {
 
         return {
           id: item.id,
+          appointment_id: item.appointment?.id || item.id,
           start_time: item.start_time,
           pet_name: petName || 'Mascota',
           status: item.appointment?.status || 'scheduled',
