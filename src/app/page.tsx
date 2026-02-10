@@ -44,15 +44,30 @@ export default async function DashboardPage() {
     return w.roles.includes('all') || w.roles.includes(role);
   });
 
-  // 4. Layout
+// 4. Layout
   let userLayout: string[] = [];
+  
   if (user) {
-    const { data: settings } = await supabase.from('user_settings').select('dashboard_layout').eq('user_id', user.id).single();
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('dashboard_layout')
+      .eq('user_id', user.id)
+      .single();
+    
+    // FIX: Si existe pero está vacío, O si no existe, usar default.
     if (settings?.dashboard_layout && Array.isArray(settings.dashboard_layout) && settings.dashboard_layout.length > 0) {
       userLayout = settings.dashboard_layout;
     } else {
-      // DEFAULT LAYOUT si es la primera vez
-      userLayout = ['weather', 'revenue_today', 'appointments_status', 'revenue_month', 'agenda_timeline', 'weekly_chart', 'clients_recent'];
+      // DEFAULT LAYOUT: Forzamos esto si no hay nada guardado
+      // Agregaremos los nuevos widgets que diseñaremos abajo
+      userLayout = [
+        'stats_overview', // Nuevo
+        'live_operations', // Nuevo
+        'staff_status',    // Nuevo
+        'agenda_timeline', 
+        'quick_actions',   // Nuevo
+        'revenue_month'
+      ];
     }
   }
 
