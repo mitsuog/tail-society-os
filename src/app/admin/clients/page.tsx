@@ -107,8 +107,9 @@ export default async function ClientsCRMPage({ searchParams }: PageProps) {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-blue-50/30 to-white pt-20 md:pt-8 pb-8">
-            <div className="max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 w-full">
+        // SCROLL FIX: Usamos w-full en lugar de min-h-screen y quitamos pt-20
+        <div className="w-full bg-gradient-to-b from-blue-50/30 to-white pb-8">
+            <div className="max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6 py-6 lg:py-8 w-full">
                 
                 {/* HEADER */}
                 <div className="mb-4 sm:mb-6 lg:mb-8 space-y-3 sm:space-y-4">

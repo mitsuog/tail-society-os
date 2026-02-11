@@ -48,7 +48,7 @@ export default function ClientActions({ client }: ClientActionsProps) {
       <EditClientDialog 
         client={client}
         trigger={
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-blue-600 rounded-full" title="Editar">
+          <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full" title="Editar">
             <Pencil className="h-3.5 w-3.5" />
           </Button>
         }
@@ -69,7 +69,7 @@ export default function ClientActions({ client }: ClientActionsProps) {
       {/* 4. Menú Extra */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-slate-600 rounded-full">
+          <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
