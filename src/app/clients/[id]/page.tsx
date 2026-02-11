@@ -124,8 +124,8 @@ export default async function ClientDetail({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50/30 to-white pt-20 md:pt-8">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50/30 to-white pt-20 md:pt-8 pb-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6 w-full">
       
         {/* HEADER */}
         <div className="space-y-4">
@@ -282,10 +282,10 @@ export default async function ClientDetail({
                 )}
               </div>
 
-              {/* LISTA SCROLLEABLE SIN RESTRICCIONES */}
-              <div className="max-h-[600px] overflow-y-auto">
+              {/* LISTA SCROLLEABLE - Permite scroll natural de página */}
+              <div className="divide-y divide-gray-100">
                 {displayedAppointments.length > 0 ? (
-                  <div className="divide-y divide-gray-100">
+                  <>
                     {displayedAppointments.map((appt) => (
                       <div key={appt.id} className="p-3 sm:p-4 hover:bg-blue-50/30 transition-colors group">
                         <div className="flex flex-col sm:flex-row sm:items-start gap-3">
@@ -329,7 +329,7 @@ export default async function ClientDetail({
                         </div>
                       </div>
                     ))}
-                  </div>
+                  </>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 text-gray-400 p-4">
                     <div className="bg-blue-50 p-4 rounded-full mb-3">
