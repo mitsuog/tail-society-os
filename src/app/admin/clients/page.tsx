@@ -3,15 +3,12 @@ import Link from 'next/link';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
-    Phone, Mail, History, ShieldAlert, ChevronLeft, ChevronRight, Dog, PawPrint, Search as SearchIcon
+    Phone, Mail, History, ShieldAlert, ChevronLeft, ChevronRight, Dog, PawPrint, Search as SearchIcon, Eye
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 
 // COMPONENTES
 import ClientPageHeader from './ClientPageHeader';
@@ -114,190 +111,309 @@ export default async function ClientsCRMPage({ searchParams }: PageProps) {
     };
 
     return (
-        <div className="flex flex-col min-h-screen bg-gray-50/50 pt-16 md:pt-8 pb-8 px-4 md:px-8 w-full max-w-[1920px] mx-auto animate-in fade-in duration-500">
-            
-            {/* ENCABEZADO Y ACCIONES */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
-                <div className="space-y-1">
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Directorio</h1>
-                    <p className="text-gray-500 text-sm">
-                        Gestiona {totalItems} expedientes registrados.
-                    </p>
-                </div>
-                <div className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
-                    <div className="w-full sm:w-72">
-                        <Search placeholder="Buscar cliente, mascota..." />
+        <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+            <div className="max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
+                
+                {/* HEADER MÓVIL-OPTIMIZADO */}
+                <div className="mb-4 sm:mb-6 lg:mb-8 space-y-3 sm:space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div className="space-y-1">
+                            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+                                Directorio de Clientes
+                            </h1>
+                            <p className="text-xs sm:text-sm text-slate-500">
+                                {totalItems} {totalItems === 1 ? 'cliente registrado' : 'clientes registrados'}
+                            </p>
+                        </div>
+                        <div className="hidden sm:block">
+                            <ClientPageHeader />
+                        </div>
                     </div>
-                    <ClientPageHeader />
+                    
+                    {/* BARRA DE BÚSQUEDA */}
+                    <div className="flex gap-2">
+                        <div className="flex-1">
+                            <Search placeholder="Buscar por nombre, teléfono, mascota..." />
+                        </div>
+                        <div className="sm:hidden">
+                            <ClientPageHeader />
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {/* TABLA ESTILIZADA */}
-            <Card className="border-gray-200/60 shadow-sm bg-white overflow-hidden rounded-xl">
-                <div className="overflow-x-auto">
-                    <Table className="min-w-[700px]">
-                        <TableHeader className="bg-gray-50/50">
-                            <TableRow className="hover:bg-transparent border-gray-100">
-                                <TableHead className="w-[35%] pl-6 py-4 text-[11px] uppercase tracking-wider font-semibold text-gray-500">Cliente</TableHead>
-                                <TableHead className="w-[25%] py-4 text-[11px] uppercase tracking-wider font-semibold text-gray-500">Mascotas</TableHead>
-                                <TableHead className="hidden md:table-cell w-[20%] py-4 text-[11px] uppercase tracking-wider font-semibold text-gray-500">Detalles</TableHead>
-                                <TableHead className="hidden lg:table-cell w-[10%] py-4 text-[11px] uppercase tracking-wider font-semibold text-gray-500">Última Visita</TableHead>
-                                
-                                {/* CORRECCIÓN AQUÍ: Agregamos sticky right-0 y z-index al encabezado también */}
-                                <TableHead className="text-right pr-6 py-4 text-[11px] uppercase tracking-wider font-semibold text-gray-500 sticky right-0 bg-gray-50 z-10 shadow-[ -5px_0px_5px_-5px_rgba(0,0,0,0.1)] md:static md:shadow-none">
-                                    Acciones
-                                </TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {clients.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={5} className="h-64 text-center">
-                                        <div className="flex flex-col items-center justify-center gap-3 text-gray-400">
-                                            <div className="bg-gray-50 p-4 rounded-full">
-                                                {isSearching ? <SearchIcon className="h-6 w-6"/> : <PawPrint className="h-6 w-6" />}
-                                            </div>
-                                            <p className="text-sm font-medium">
-                                                {isSearching ? `No hay resultados para "${searchTerm}"` : "Aún no hay clientes."}
-                                            </p>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                clients.map((client) => (
-                                    <TableRow key={client.id} className="group hover:bg-gray-50/80 transition-colors border-gray-100">
-                                        
-                                        {/* COL 1: CLIENTE */}
-                                        <TableCell className="align-top py-4 pl-6">
-                                            <div className="flex gap-4">
-                                                <Avatar className="h-10 w-10 border border-gray-200 bg-white shadow-sm mt-0.5 hidden sm:block">
-                                                    <AvatarFallback className="bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 font-bold text-xs">
-                                                        {client.initials}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="flex flex-col gap-1 min-w-0">
-                                                    <Link 
-                                                        href={`/clients/${client.id}`} 
-                                                        className="font-semibold text-gray-900 hover:text-blue-600 transition-colors truncate text-[15px]"
-                                                    >
-                                                        {client.full_name}
-                                                    </Link>
-                                                    
-                                                    <div className="flex flex-col gap-0.5">
-                                                        <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
-                                                            <Phone size={11} className="text-gray-400 shrink-0"/> {client.phone}
+                {/* VISTA DESKTOP: TABLA */}
+                <div className="hidden lg:block">
+                    <Card className="border-slate-200 shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Cliente</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Mascotas</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Detalles</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Última Visita</th>
+                                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {clients.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="px-6 py-16 text-center">
+                                                <div className="flex flex-col items-center gap-3 text-slate-400">
+                                                    <div className="bg-slate-100 p-4 rounded-full">
+                                                        {isSearching ? <SearchIcon className="h-8 w-8"/> : <PawPrint className="h-8 w-8" />}
+                                                    </div>
+                                                    <p className="text-sm font-medium text-slate-600">
+                                                        {isSearching ? `No se encontraron resultados para "${searchTerm}"` : "Aún no hay clientes registrados"}
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        clients.map((client) => (
+                                            <tr key={client.id} className="group hover:bg-slate-50/50 transition-colors">
+                                                {/* CLIENTE */}
+                                                <td className="px-6 py-4">
+                                                    <div className="flex gap-3 items-center">
+                                                        <Avatar className="h-10 w-10 border-2 border-slate-100">
+                                                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold text-sm">
+                                                                {client.initials}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="min-w-0 flex-1">
+                                                            <Link 
+                                                                href={`/clients/${client.id}`} 
+                                                                className="font-semibold text-slate-900 hover:text-blue-600 transition-colors block truncate"
+                                                            >
+                                                                {client.full_name}
+                                                            </Link>
+                                                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                                                <span className="flex items-center gap-1">
+                                                                    <Phone size={11}/> {client.phone}
+                                                                </span>
+                                                                {client.email && (
+                                                                    <>
+                                                                        <span className="text-slate-300">•</span>
+                                                                        <span className="flex items-center gap-1 truncate max-w-[200px]">
+                                                                            <Mail size={11}/> {client.email}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        {client.email && (
-                                                            <div className="hidden sm:flex items-center gap-1.5 text-xs text-gray-400 truncate max-w-[200px]">
-                                                                <Mail size={11} className="text-gray-300 shrink-0"/> 
-                                                                <span className="truncate">{client.email}</span>
+                                                    </div>
+                                                </td>
+
+                                                {/* MASCOTAS */}
+                                                <td className="px-4 py-4">
+                                                    <div className="flex flex-wrap gap-1.5 max-w-[200px]">
+                                                        {client.pets && client.pets.length > 0 ? (
+                                                            client.pets.map((pet: any) => (
+                                                                <Badge key={pet.id} variant="secondary" className="bg-white border border-slate-200 text-slate-700 hover:border-slate-300 gap-1.5 shadow-sm">
+                                                                    <Dog size={12} className="text-slate-400"/>
+                                                                    <span className="text-xs font-medium">{pet.name}</span>
+                                                                </Badge>
+                                                            ))
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400 italic">Sin mascotas</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+
+                                                {/* DETALLES */}
+                                                <td className="px-4 py-4">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        {!client.is_active || client.status === 'inactive' && (
+                                                            <Badge variant="destructive" className="w-fit text-xs">Inactivo</Badge>
+                                                        )}
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {client.tags.map((tag: string) => (
+                                                                <Badge key={tag} variant="outline" className={`text-xs capitalize ${tagColors[tag] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                                                    {tag.replace('_', ' ')}
+                                                                </Badge>
+                                                            ))}
+                                                        </div>
+                                                        {client.notes && (
+                                                            <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200 max-w-[180px]">
+                                                                <ShieldAlert size={12} className="mt-0.5 shrink-0"/>
+                                                                <span className="truncate">{client.notes}</span>
                                                             </div>
                                                         )}
                                                     </div>
+                                                </td>
 
-                                                    {/* TAGS MÓVIL */}
-                                                    <div className="flex md:hidden flex-wrap gap-1 mt-1.5">
-                                                        {client.tags.slice(0, 2).map((tag: string) => (
-                                                            <span key={tag} className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 font-medium">{tag}</span>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </TableCell>
-
-                                        {/* COL 2: MASCOTAS */}
-                                        <TableCell className="align-top py-4">
-                                            <div className="flex flex-wrap gap-1.5 max-w-[220px]">
-                                                {client.pets && client.pets.length > 0 ? (
-                                                    client.pets.map((pet: any) => (
-                                                        <Badge key={pet.id} variant="secondary" className="bg-white border border-gray-200 text-gray-600 hover:border-gray-300 pl-1.5 pr-2.5 py-1 h-auto gap-1.5 flex items-center shadow-sm rounded-md transition-all">
-                                                            <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
-                                                                <Dog size={10} />
+                                                {/* ÚLTIMA VISITA */}
+                                                <td className="px-4 py-4">
+                                                    {client.lastVisit ? (
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                                                                <History size={13} className="text-slate-400"/>
+                                                                {formatDistanceToNow(parseISO(client.lastVisit), { addSuffix: true, locale: es })}
                                                             </div>
-                                                            <div className="flex flex-col leading-none">
-                                                                <span className="font-medium text-[11px]">{pet.name}</span>
-                                                                {pet.breed && (
-                                                                    <span className="text-[9px] text-gray-400 hidden lg:inline-block max-w-[80px] truncate">
-                                                                        {pet.breed}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </Badge>
-                                                    ))
-                                                ) : <span className="text-xs text-gray-300 italic">Sin mascotas</span>}
-                                            </div>
-                                        </TableCell>
+                                                            <span className="text-xs text-slate-400">
+                                                                {new Date(client.lastVisit).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-400">Sin historial</span>
+                                                    )}
+                                                </td>
 
-                                        {/* COL 3: ESTADO Y NOTAS (Desktop) */}
-                                        <TableCell className="align-top py-4 hidden md:table-cell">
-                                            <div className="flex flex-col gap-2 items-start">
-                                                {!client.is_active || client.status === 'inactive' ? (
-                                                    <Badge variant="destructive" className="h-5 text-[10px] px-2 rounded-full">Inactivo</Badge>
-                                                ) : null}
+                                                {/* ACCIONES */}
+                                                <td className="px-6 py-4 text-right">
+                                                    <ClientActions client={client} />
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
 
-                                                <div className="flex flex-wrap gap-1">
-                                                    {client.tags.length > 0 ? client.tags.map((tag: string) => (
-                                                        <Badge key={tag} variant="outline" className={`text-[10px] px-2 py-0.5 h-5 font-medium border rounded-full capitalize ${tagColors[tag] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                                                            {tag.replace('_', ' ')}
-                                                        </Badge>
-                                                    )) : null}
+                        {/* PAGINACIÓN DESKTOP */}
+                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                            <span className="text-sm text-slate-600">
+                                Página <span className="font-semibold">{currentPage}</span> de <span className="font-semibold">{totalPages || 1}</span>
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <Link href={currentPage > 1 ? `/admin/clients?q=${searchTerm}&page=${currentPage - 1}` : '#'}>
+                                    <Button variant="outline" size="sm" disabled={currentPage <= 1} className="h-9">
+                                        <ChevronLeft size={16} className="mr-1"/> Anterior
+                                    </Button>
+                                </Link>
+                                <Link href={currentPage < totalPages ? `/admin/clients?q=${searchTerm}&page=${currentPage + 1}` : '#'}>
+                                    <Button variant="outline" size="sm" disabled={currentPage >= totalPages} className="h-9">
+                                        Siguiente <ChevronRight size={16} className="ml-1"/>
+                                    </Button>
+                                </Link>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+
+                {/* VISTA MÓVIL/TABLET: CARDS */}
+                <div className="lg:hidden space-y-3">
+                    {clients.length === 0 ? (
+                        <Card className="p-12 text-center border-slate-200">
+                            <div className="flex flex-col items-center gap-3 text-slate-400">
+                                <div className="bg-slate-100 p-4 rounded-full">
+                                    {isSearching ? <SearchIcon className="h-8 w-8"/> : <PawPrint className="h-8 w-8" />}
+                                </div>
+                                <p className="text-sm font-medium text-slate-600">
+                                    {isSearching ? `No hay resultados para "${searchTerm}"` : "Aún no hay clientes"}
+                                </p>
+                            </div>
+                        </Card>
+                    ) : (
+                        clients.map((client) => (
+                            <Card key={client.id} className="overflow-hidden border-slate-200 hover:shadow-md transition-shadow">
+                                <div className="p-4 space-y-3">
+                                    {/* HEADER DEL CARD */}
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex gap-3 items-start flex-1 min-w-0">
+                                            <Avatar className="h-12 w-12 border-2 border-slate-100 shrink-0">
+                                                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-bold">
+                                                    {client.initials}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="min-w-0 flex-1">
+                                                <h3 className="font-semibold text-slate-900 truncate mb-1">
+                                                    {client.full_name}
+                                                </h3>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-600 mb-0.5">
+                                                    <Phone size={11} className="text-slate-400 shrink-0"/>
+                                                    <span>{client.phone}</span>
                                                 </div>
-
-                                                {client.notes && (
-                                                    <div className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50/50 px-2 py-1 rounded-md border border-amber-100/50 max-w-[180px]">
-                                                        <ShieldAlert size={12} className="mt-0.5 shrink-0 opacity-70"/> 
-                                                        <span className="truncate line-clamp-2 leading-tight">{client.notes}</span>
+                                                {client.email && (
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate">
+                                                        <Mail size={11} className="text-slate-400 shrink-0"/>
+                                                        <span className="truncate">{client.email}</span>
                                                     </div>
                                                 )}
                                             </div>
-                                        </TableCell>
+                                        </div>
+                                        <Link href={`/clients/${client.id}`}>
+                                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50">
+                                                <Eye size={16}/>
+                                            </Button>
+                                        </Link>
+                                    </div>
 
-                                        {/* COL 4: VISITA (Desktop Grande) */}
-                                        <TableCell className="align-top py-4 hidden lg:table-cell">
-                                            {client.lastVisit ? (
-                                                <div className="flex flex-col gap-0.5">
-                                                    <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-                                                        <History size={13} className="text-gray-400"/>
-                                                        {formatDistanceToNow(parseISO(client.lastVisit), { addSuffix: true, locale: es })}
-                                                    </div>
-                                                    <span className="text-[10px] text-gray-400 pl-5">
-                                                        {new Date(client.lastVisit).toLocaleDateString()}
-                                                    </span>
-                                                </div>
-                                            ) : <span className="text-xs text-gray-300 pl-2">Sin historial</span>}
-                                        </TableCell>
+                                    {/* MASCOTAS */}
+                                    {client.pets && client.pets.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {client.pets.map((pet: any) => (
+                                                <Badge key={pet.id} variant="secondary" className="bg-slate-100 text-slate-700 gap-1.5">
+                                                    <Dog size={11}/>
+                                                    <span className="text-xs">{pet.name}</span>
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
 
-                                        {/* COL 5: ACCIONES (STICKY MATCH) */}
-                                        <TableCell className="align-middle text-right pr-6 py-4 sticky right-0 bg-white md:bg-transparent shadow-[ -8px_0px_12px_-4px_rgba(0,0,0,0.05)] md:shadow-none">
-                                            <ClientActions client={client} />
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
+                                    {/* TAGS Y ESTADO */}
+                                    {(client.tags.length > 0 || !client.is_active) && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {!client.is_active && (
+                                                <Badge variant="destructive" className="text-xs">Inactivo</Badge>
+                                            )}
+                                            {client.tags.slice(0, 3).map((tag: string) => (
+                                                <Badge key={tag} variant="outline" className={`text-xs capitalize ${tagColors[tag] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                                    {tag.replace('_', ' ')}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* ÚLTIMA VISITA Y ACCIONES */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                                        {client.lastVisit ? (
+                                            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                                                <History size={12} className="text-slate-400"/>
+                                                <span>{formatDistanceToNow(parseISO(client.lastVisit), { addSuffix: true, locale: es })}</span>
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-slate-400">Sin visitas</span>
+                                        )}
+                                        <ClientActions client={client} />
+                                    </div>
+
+                                    {/* NOTA ADMINISTRATIVA */}
+                                    {client.notes && (
+                                        <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 px-2.5 py-2 rounded-md border border-amber-200">
+                                            <ShieldAlert size={12} className="mt-0.5 shrink-0"/>
+                                            <span className="line-clamp-2">{client.notes}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </Card>
+                        ))
+                    )}
+
+                    {/* PAGINACIÓN MÓVIL */}
+                    {totalPages > 1 && (
+                        <Card className="p-4 border-slate-200">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-600">
+                                    Página {currentPage} de {totalPages}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <Link href={currentPage > 1 ? `/admin/clients?q=${searchTerm}&page=${currentPage - 1}` : '#'}>
+                                        <Button variant="outline" size="sm" disabled={currentPage <= 1} className="h-9 w-9 p-0">
+                                            <ChevronLeft size={16}/>
+                                        </Button>
+                                    </Link>
+                                    <Link href={currentPage < totalPages ? `/admin/clients?q=${searchTerm}&page=${currentPage + 1}` : '#'}>
+                                        <Button variant="outline" size="sm" disabled={currentPage >= totalPages} className="h-9 w-9 p-0">
+                                            <ChevronRight size={16}/>
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
                 </div>
-
-                {/* PAGINACIÓN ELEGANTE */}
-                <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <span className="text-xs text-gray-500 font-medium">
-                        Página {currentPage} de {totalPages || 1}
-                    </span>
-                    
-                    <div className="flex items-center gap-2">
-                        <Link href={currentPage > 1 ? `/admin/clients?q=${searchTerm}&page=${currentPage - 1}` : '#'}>
-                            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-white shadow-sm" disabled={currentPage <= 1}>
-                                <ChevronLeft size={16}/>
-                            </Button>
-                        </Link>
-                        <Link href={currentPage < totalPages ? `/admin/clients?q=${searchTerm}&page=${currentPage + 1}` : '#'}>
-                            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-white shadow-sm" disabled={currentPage >= totalPages}>
-                                <ChevronRight size={16}/>
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </Card>
+            </div>
         </div>
     );
 }

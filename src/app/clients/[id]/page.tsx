@@ -2,7 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { 
   Phone, MapPin, Mail, Clock, 
-  Filter, XCircle, History, FileSignature, FileText, CalendarPlus, AlertCircle, Pencil, Eye
+  Filter, XCircle, History, FileSignature, FileText, CalendarPlus, AlertCircle, Pencil, Eye, Dog, Calendar
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,20 +69,18 @@ export default async function ClientDetail({
   const supabase = await createClient();
 
   // 1. CARGA DE CLIENTE
-  // Usamos 'rawClient' para diferenciar los datos crudos
   const { data: rawClient } = await supabase.from('clients').select('*').eq('id', id).single();
   
   if (!rawClient) {
     return (
-        <div className="flex flex-col items-center justify-center h-screen text-slate-500 gap-4">
-            <p>Cliente no encontrado</p>
+        <div className="flex flex-col items-center justify-center min-h-screen text-slate-500 gap-4 p-4">
+            <p className="text-lg">Cliente no encontrado</p>
             <Link href="/admin/clients"><Button variant="outline">Volver al Directorio</Button></Link>
         </div>
     );
   }
 
-  // --- SOLUCIÓN: BLINDAJE DE DATOS ---
-  // Creamos un objeto cliente seguro. Si internal_tags no es array, ponemos [].
+  // BLINDAJE DE DATOS
   const client = {
       ...rawClient,
       internal_tags: Array.isArray(rawClient.internal_tags) ? rawClient.internal_tags : []
@@ -97,7 +95,7 @@ export default async function ClientDetail({
     
   const pets = (rawPets || []) as Pet[];
 
-  // --- LÓGICA DE FIRMA ---
+  // LÓGICA DE FIRMA
   const hasPets = pets.length > 0;
   const allSigned = hasPets && pets.every(p => p.waiver_signed);
   const someSigned = hasPets && pets.some(p => p.waiver_signed) && !allSigned;
@@ -133,205 +131,235 @@ export default async function ClientDetail({
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 space-y-4 animate-in fade-in duration-300">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       
-      {/* HEADER PRINCIPAL */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 pb-4 gap-4">
-        <div className="flex items-center gap-3">
-          <BackButton />
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold text-slate-900 leading-none">{client.full_name}</h1>
-              
-              <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal text-slate-500 bg-slate-100">
-                 Desde {clientSinceDate.getFullYear()}
-              </Badge>
-
-              {allSigned ? (
-                  <Badge className="bg-blue-50 text-blue-700 border-blue-200 gap-1 text-[10px] h-5 hover:bg-blue-100 cursor-default">
-                      <FileSignature size={10}/> Contrato Vigente
+        {/* HEADER PRINCIPAL - OPTIMIZADO MÓVIL */}
+        <div className="space-y-4">
+          {/* FILA 1: Back button + Nombre */}
+          <div className="flex items-start gap-3">
+            <BackButton />
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 truncate">
+                {client.full_name}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                <Badge variant="secondary" className="text-xs h-5 px-2 font-normal text-slate-600 bg-slate-100">
+                  Cliente desde {clientSinceDate.getFullYear()}
+                </Badge>
+                
+                {allSigned ? (
+                  <Badge className="bg-blue-50 text-blue-700 border-blue-200 gap-1 text-xs h-5">
+                    <FileSignature size={10}/> Contrato Vigente
                   </Badge>
-              ) : someSigned ? (
-                  <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 gap-1 text-[10px] h-5">
-                      <AlertCircle size={10}/> Firma Parcial
+                ) : someSigned ? (
+                  <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 gap-1 text-xs h-5">
+                    <AlertCircle size={10}/> Firma Parcial
                   </Badge>
-              ) : (
-                  <Badge variant="outline" className="text-slate-500 border-slate-200 bg-slate-50 gap-1 text-[10px] h-5">
-                      <FileText size={10}/> Sin Firma
+                ) : (
+                  <Badge variant="outline" className="text-slate-500 border-slate-200 bg-slate-50 gap-1 text-xs h-5">
+                    <FileText size={10}/> Sin Firma
                   </Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><Phone size={12}/> {client.phone}</span>
-              <span className="text-slate-300">|</span>
-              <span className="flex items-center gap-1"><Mail size={12}/> {client.email || "Sin email"}</span>
-              <span className="flex items-center gap-1"><MapPin size={12}/> Monterrey, NL</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* ACCIONES DEL HEADER */}
-        <div className="flex gap-2 w-full md:w-auto justify-end items-center">
-           <NewAppointmentDialog 
+          {/* FILA 2: Datos de contacto */}
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs sm:text-sm text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <Phone size={14} className="text-slate-400"/> {client.phone}
+            </span>
+            <span className="hidden sm:inline text-slate-300">|</span>
+            <span className="flex items-center gap-1.5 truncate max-w-[200px] sm:max-w-none">
+              <Mail size={14} className="text-slate-400"/> {client.email || "Sin email"}
+            </span>
+            <span className="hidden sm:inline text-slate-300">|</span>
+            <span className="flex items-center gap-1.5">
+              <MapPin size={14} className="text-slate-400"/> Monterrey, NL
+            </span>
+          </div>
+
+          {/* FILA 3: Acciones - Stack en móvil, row en desktop */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <NewAppointmentDialog 
               initialClient={{ id: client.id, full_name: client.full_name, phone: client.phone }}
               customTrigger={
-                  <Button className="bg-slate-900 text-white hover:bg-slate-800 h-9 text-xs">
-                      <CalendarPlus className="mr-2 h-3.5 w-3.5"/> Nueva Cita
-                  </Button>
-              }
-           />
-           
-           <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-               <SignatureLinkButton clientId={client.id} isSigned={allSigned} />
-               {hasPets && (
-                   <Link href={`/waiver/${client.id}?mode=view`} target="_blank">
-                       <Button variant="ghost" size="sm" className="h-8 text-xs text-slate-600 hover:text-blue-700 hover:bg-white px-3 border-l border-slate-200 rounded-l-none" title="Ver Documento Firmado">
-                           <Eye size={14} className="mr-1.5"/> Ver
-                       </Button>
-                   </Link>
-               )}
-           </div>
-           
-           <AddPetDialog clientId={client.id} />
-           
-           <EditClientDialog 
-              client={client} 
-              trigger={
-                <Button variant="outline" className="gap-2 bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:text-blue-700 h-9 px-3">
-                   <Pencil size={14} />
+                <Button className="bg-slate-900 text-white hover:bg-slate-800 h-9 text-sm w-full sm:w-auto justify-center">
+                  <CalendarPlus className="mr-2 h-4 w-4"/> Nueva Cita
                 </Button>
               }
-           />
-        </div>
-      </div>
-
-      {/* CONTENIDO PRINCIPAL */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        
-        {/* COLUMNA IZQUIERDA: PERFIL Y MASCOTAS (3/12) */}
-        <div className="lg:col-span-3 space-y-4">
-          
-          {/* Tarjeta de Notas y Etiquetas */}
-          {(client.notes || client.internal_tags.length > 0) && (
-            <div className="bg-white rounded-lg border border-slate-200 p-3 text-xs space-y-2 shadow-sm">
-              
-              {/* RENDERIZADO SEGURO DE TAGS */}
-              {client.internal_tags.length > 0 && (
-                 <div className="flex flex-wrap gap-1">
-                    {client.internal_tags.map((tag: string) => (
-                        <span key={tag} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100 flex items-center gap-1 capitalize">
-                            <Filter size={10}/> {tag.replace('_', ' ')}
-                        </span>
-                    ))}
-                 </div>
-              )}
-
-              {client.notes && (
-                 <div className="bg-slate-50 text-slate-600 p-2 rounded border border-slate-100 leading-relaxed italic">
-                   {client.notes}
-                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Lista de Mascotas */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center px-1">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mascotas ({pets.length})</h3>
-            </div>
+            />
             
-            <div className="flex flex-col gap-2">
-              {pets.map(pet => (
-                <PetCard 
-                  key={pet.id} 
-                  pet={pet} 
-                  clientId={client.id}
-                  isActive={pet_id === pet.id}
-                />
-              ))}
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+              <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 flex-1 sm:flex-initial">
+                <SignatureLinkButton clientId={client.id} isSigned={allSigned} />
+                {hasPets && (
+                  <Link href={`/waiver/${client.id}?mode=view`} target="_blank" className="flex-1 sm:flex-initial">
+                    <Button variant="ghost" size="sm" className="h-8 text-xs text-slate-600 hover:text-blue-700 hover:bg-white px-3 border-l border-slate-200 rounded-l-none w-full sm:w-auto" title="Ver Documento">
+                      <Eye size={14} className="sm:mr-1.5"/> <span className="sm:inline">Ver</span>
+                    </Button>
+                  </Link>
+                )}
+              </div>
               
-              {pets.length === 0 && (
-                 <div className="text-center p-6 border border-dashed border-slate-200 rounded-lg bg-slate-50">
-                    <p className="text-xs text-slate-400">Sin mascotas registradas</p>
-                 </div>
-              )}
+              <AddPetDialog clientId={client.id} />
+              
+              <EditClientDialog 
+                client={client} 
+                trigger={
+                  <Button variant="outline" size="sm" className="bg-white text-slate-700 border-slate-200 hover:bg-slate-50 h-9 w-9 sm:w-auto px-2 sm:px-3">
+                    <Pencil size={14} className="sm:mr-0"/>
+                  </Button>
+                }
+              />
             </div>
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: HISTORIAL (9/12) */}
-        <div className="lg:col-span-9">
-          <Card className="shadow-sm border-slate-200 h-full min-h-[500px] flex flex-col bg-white">
+        {/* CONTENIDO PRINCIPAL - LAYOUT RESPONSIVO */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
+          
+          {/* SIDEBAR: PERFIL Y MASCOTAS */}
+          <div className="lg:col-span-3 space-y-4">
+            
+            {/* Tarjeta de Notas y Etiquetas */}
+            {(client.notes || client.internal_tags.length > 0) && (
+              <Card className="p-3 text-xs space-y-2 border-slate-200">
+                {client.internal_tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {client.internal_tags.map((tag: string) => (
+                      <span key={tag} className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-100 flex items-center gap-1 capitalize">
+                        <Filter size={10}/> {tag.replace('_', ' ')}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {client.notes && (
+                  <div className="bg-slate-50 text-slate-600 p-2.5 rounded border border-slate-100 leading-relaxed italic text-xs">
+                    {client.notes}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Lista de Mascotas */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <Dog size={14} className="text-slate-400"/> Mascotas ({pets.length})
+                </h3>
+              </div>
               
-              {/* Header de Tabla */}
-              <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/30 rounded-t-lg">
-                 <div className="flex items-center gap-2">
-                    <History size={16} className="text-slate-400"/>
-                    <span className="text-sm font-bold text-slate-700">Historial de Servicios</span>
-                 </div>
-                 
-                 {pet_id && activePetName ? (
-                    <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium border border-blue-100 animate-in fade-in">
-                       <Filter size={10} /> Filtrado por: <strong>{activePetName}</strong>
-                       <Link href={`/clients/${client.id}`} title="Ver todos"><XCircle size={14} className="ml-1 cursor-pointer hover:text-red-500 transition-colors"/></Link>
-                    </div>
-                 ) : (
-                    <span className="text-xs text-slate-400">Mostrando historial completo</span>
-                 )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
+                {pets.map(pet => (
+                  <PetCard 
+                    key={pet.id} 
+                    pet={pet} 
+                    clientId={client.id}
+                    isActive={pet_id === pet.id}
+                  />
+                ))}
+                
+                {pets.length === 0 && (
+                  <Card className="p-6 text-center border-dashed border-slate-300 bg-slate-50/50">
+                    <p className="text-xs text-slate-400">Sin mascotas registradas</p>
+                  </Card>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* MAIN CONTENT: HISTORIAL */}
+          <div className="lg:col-span-9">
+            <Card className="border-slate-200 h-full min-h-[400px] flex flex-col overflow-hidden">
+              
+              {/* Header de Historial */}
+              <div className="p-3 sm:p-4 border-b border-slate-100 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <History size={16} className="text-slate-400"/>
+                  <span className="text-sm font-bold text-slate-700">Historial de Servicios</span>
+                </div>
+                
+                {pet_id && activePetName ? (
+                  <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-medium border border-blue-100">
+                    <Filter size={12}/> 
+                    <span className="hidden sm:inline">Filtrado por:</span>
+                    <strong>{activePetName}</strong>
+                    <Link href={`/clients/${client.id}`} title="Ver todos">
+                      <XCircle size={14} className="ml-1 cursor-pointer hover:text-red-500 transition-colors"/>
+                    </Link>
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-400">Historial completo</span>
+                )}
               </div>
 
-              {/* Lista de Citas */}
-              <div className="flex-1 overflow-auto p-0">
+              {/* Lista de Citas - Optimizada para móvil */}
+              <div className="flex-1 overflow-auto">
                 {displayedAppointments.length > 0 ? (
                   <div className="divide-y divide-slate-100">
-                      {displayedAppointments.map((appt) => (
-                        <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-4 hover:bg-slate-50 transition-colors group">
+                    {displayedAppointments.map((appt) => (
+                      <div key={appt.id} className="p-3 sm:p-4 hover:bg-slate-50/50 transition-colors group">
+                        <div className="flex flex-col sm:flex-row sm:items-start gap-3">
                           
                           {/* Fecha y Mascota */}
-                          <div className="sm:w-[150px] shrink-0">
-                             <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="outline" className="text-[10px] h-4 px-1 rounded-sm border-slate-300 text-slate-500 font-normal bg-white">
-                                  {appt.pet?.name || 'Mascota'}
-                                </Badge>
-                             </div>
-                             <p className="text-sm font-bold text-slate-800 capitalize">
-                               {new Date(appt.date).toLocaleDateString('es-MX', {day: 'numeric', month: 'short', year: '2-digit'})}
-                             </p>
-                             <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                               <Clock size={10}/> {new Date(appt.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                             </p>
+                          <div className="sm:w-[160px] shrink-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <Badge variant="outline" className="text-[10px] h-5 px-2 rounded border-slate-300 text-slate-600 font-medium bg-white">
+                                {appt.pet?.name || 'Mascota'}
+                              </Badge>
+                            </div>
+                            <div className="flex items-baseline gap-2">
+                              <p className="text-sm sm:text-base font-bold text-slate-800">
+                                {new Date(appt.date).toLocaleDateString('es-MX', {
+                                  day: 'numeric', 
+                                  month: 'short', 
+                                  year: '2-digit'
+                                })}
+                              </p>
+                              <p className="text-xs text-slate-400 flex items-center gap-1">
+                                <Clock size={10}/> {new Date(appt.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </p>
+                            </div>
                           </div>
 
                           {/* Descripción */}
                           <div className="flex-1 min-w-0">
-                             <p className="text-sm text-slate-700 font-medium truncate group-hover:whitespace-normal group-hover:overflow-visible transition-all">
-                               {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
-                             </p>
-                             {appt.secondary_services_text && (
-                               <p className="text-xs text-slate-400 truncate mt-0.5">{appt.secondary_services_text}</p>
-                             )}
+                            <p className="text-sm text-slate-700 font-medium line-clamp-2 sm:line-clamp-1 group-hover:line-clamp-none transition-all">
+                              {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
+                            </p>
+                            {appt.secondary_services_text && (
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-1 group-hover:line-clamp-none">
+                                {appt.secondary_services_text}
+                              </p>
+                            )}
                           </div>
 
                           {/* Precio */}
-                          <div className="text-right sm:w-[90px] shrink-0 border-l border-transparent sm:border-slate-100 sm:pl-4">
-                             <span className="text-sm font-bold text-green-700">${appt.price_charged?.toLocaleString() || 0}</span>
+                          <div className="text-left sm:text-right sm:w-[100px] shrink-0 sm:border-l border-transparent sm:border-slate-100 sm:pl-4">
+                            <span className="text-base sm:text-lg font-bold text-green-700">
+                              ${appt.price_charged?.toLocaleString() || 0}
+                            </span>
                           </div>
                         </div>
-                      ))}
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                      <div className="bg-slate-50 p-4 rounded-full mb-2">
-                         <FileText size={32} className="opacity-30"/>
-                      </div>
-                      <p className="text-sm font-medium text-slate-500">Sin registros disponibles</p>
-                      {pet_id && <p className="text-xs mt-1">Para esta mascota</p>}
+                  <div className="flex flex-col items-center justify-center h-64 text-slate-400 p-4">
+                    <div className="bg-slate-50 p-4 rounded-full mb-3">
+                      <Calendar size={32} className="opacity-30"/>
+                    </div>
+                    <p className="text-sm font-medium text-slate-500">Sin registros de servicios</p>
+                    {pet_id && <p className="text-xs mt-1 text-center">Para esta mascota en particular</p>}
                   </div>
                 )}
               </div>
-          </Card>
-        </div>
+            </Card>
+          </div>
 
+        </div>
       </div>
     </div>
   );
