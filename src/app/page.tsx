@@ -180,7 +180,7 @@ export default async function DashboardPage() {
     return data
       .filter((item: any) => {
         const status = item.appointment?.status;
-        return status && status !== 'cancelled';
+        return !!status; // Incluir todos los estatus (cancelled, no_show se muestran visualmente diferente en el widget)
       })
       .map((item: any) => {
         const petData = item.appointment?.pet as any;

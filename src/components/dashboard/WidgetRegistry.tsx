@@ -6,7 +6,7 @@ import {
   MapPin, CloudRain, Thermometer, Scissors, Droplets,
   Plus, CreditCard, LogIn, Clock, CheckCircle2,
   AlertTriangle, Crown, PawPrint, Phone, Calendar, Sun, Cloud, CloudSun,
-  Zap, ArrowUpRight, ArrowDownRight, Sparkles
+  Zap, ArrowUpRight, ArrowDownRight, Sparkles, XCircle, Ban
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -297,7 +297,9 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
   grouped.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   const completed = grouped.filter(g => g.status === 'completed').length;
-  const inProcess = grouped.filter(g => g.status === 'in_process').length;
+  const inProcess = grouped.filter(g => g.status === 'in_process' || g.status === 'in_progress').length;
+  const cancelled = grouped.filter(g => g.status === 'cancelled' || g.status === 'no_show').length;
+  const activeCount = grouped.length - cancelled; // Total sin canceladas para el contador
 
   return (
     <Card className="h-full shadow-sm border-slate-200 flex flex-col bg-white overflow-hidden min-h-[300px]">
@@ -314,8 +316,20 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
               {inProcess} en curso
             </Badge>
           )}
-          <Badge variant="outline" className="bg-white text-[10px] h-5 font-mono tabular-nums">
-            {completed}/{grouped.length}
+          {cancelled > 0 && (
+            <Badge className="text-[10px] h-5 bg-red-50 text-red-600 border-red-200">
+              {cancelled} cancel.
+            </Badge>
+          )}
+          <Badge variant="outline" className={cn(
+            "bg-white text-[10px] h-5 font-mono tabular-nums",
+            completed === activeCount && activeCount > 0 && "bg-emerald-50 text-emerald-700 border-emerald-200"
+          )}>
+            {completed === activeCount && activeCount > 0 ? (
+              <span className="flex items-center gap-0.5"><CheckCircle2 size={9} /> {completed}/{activeCount}</span>
+            ) : (
+              <>{completed}/{activeCount}</>
+            )}
           </Badge>
         </div>
       </CardHeader>
@@ -327,19 +341,21 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
               const date = parseISO(pet.start_time);
               const isDone = pet.status === 'completed';
               const isActive = pet.status === 'in_process' || pet.status === 'in_progress';
+              const isCancelled = pet.status === 'cancelled' || pet.status === 'no_show';
 
               return (
                 <div key={pet.appointment_id} className={cn(
                   "flex items-center gap-3 p-3 transition-colors",
-                  isDone && "opacity-40",
+                  isCancelled && "opacity-50 bg-red-50/40",
+                  isDone && "bg-emerald-50/30",
                   isActive && "bg-blue-50/50 border-l-2 border-l-blue-500",
-                  !isDone && !isActive && "hover:bg-slate-50"
+                  !isDone && !isActive && !isCancelled && "hover:bg-slate-50"
                 )}>
                   {/* Hora */}
                   <div className="flex flex-col items-center justify-center w-11 shrink-0">
                     <span className={cn(
                       "text-sm font-bold tabular-nums leading-none",
-                      isActive ? "text-blue-600" : "text-slate-700"
+                      isCancelled ? "text-red-400 line-through" : isActive ? "text-blue-600" : isDone ? "text-emerald-600" : "text-slate-700"
                     )}>
                       {format(date, 'HH:mm')}
                     </span>
@@ -348,19 +364,31 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
                   {/* Barra lateral status */}
                   <div className={cn(
                     "w-0.5 self-stretch rounded-full shrink-0",
-                    isDone ? "bg-emerald-300" : isActive ? "bg-blue-400" : "bg-slate-200"
+                    isCancelled ? "bg-red-300" : isDone ? "bg-emerald-400" : isActive ? "bg-blue-400" : "bg-slate-200"
                   )} />
 
-                  {/* Info mascota + servicios como iconos */}
+                  {/* Info mascota + servicios */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className={cn(
                         "text-xs font-bold truncate",
-                        isDone ? "text-slate-400 line-through" : "text-slate-800"
+                        isCancelled ? "text-red-400 line-through" : isDone ? "text-emerald-700" : "text-slate-800"
                       )}>
                         {pet.pet_name}
                       </p>
-                      {isDone && <CheckCircle2 size={11} className="text-emerald-500 shrink-0" />}
+                      {/* Status icons */}
+                      {isDone && (
+                        <span className="inline-flex items-center gap-0.5 h-4 px-1 rounded bg-emerald-100 text-emerald-600 shrink-0">
+                          <CheckCircle2 size={9} />
+                          <span className="text-[8px] font-bold uppercase">Listo</span>
+                        </span>
+                      )}
+                      {isCancelled && (
+                        <span className="inline-flex items-center gap-0.5 h-4 px-1 rounded bg-red-100 text-red-500 shrink-0">
+                          <XCircle size={9} />
+                          <span className="text-[8px] font-bold uppercase">{pet.status === 'no_show' ? 'No asistió' : 'Cancelada'}</span>
+                        </span>
+                      )}
                       {isActive && (
                         <span className="relative flex h-2 w-2 shrink-0">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
@@ -380,7 +408,7 @@ const AgendaSimpleWidget = ({ data }: { data: DashboardData }) => {
                             title={svc.name}
                             className={cn(
                               "inline-flex items-center gap-0.5 h-[18px] px-1.5 rounded text-[9px] font-medium",
-                              cfg.bg, cfg.text
+                              isCancelled ? "bg-red-50 text-red-300 line-through" : cfg.bg + ' ' + cfg.text
                             )}
                           >
                             <Icon size={9} />
