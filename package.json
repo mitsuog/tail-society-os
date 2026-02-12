@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "save": "git add . && git commit -m \"Avance guardado desde script\" && git push"
+    "save": "git add . && git commit -m \"Avance guardado desde script\" && git push",
+    "seed:demo": "npx tsx seed_demo.ts",
+    "deploy:demo": "git checkout demo && git merge main && git push origin demo && git checkout main"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
