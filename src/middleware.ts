@@ -54,20 +54,20 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Recuperar la sesión del usuario
   const { data: { user } } = await supabase.auth.getUser()
 
-  // --- REGLAS DE SEGURIDAD ---
+  // --- REGLAS DE SEGURIDAD ACTUALIZADAS ---
 
-  // 1. Si el usuario NO está logueado y trata de entrar a cualquier página que NO sea login...
-  if (!user && !request.nextUrl.pathname.startsWith('/login')) {
-    // ...redirigirlo al Login
+  // EXCEPCIÓN: Permitir acceso público a /checkin (Kiosko)
+  const isPublicRoute = request.nextUrl.pathname.startsWith('/checkin');
+
+  // 1. Si NO hay usuario y NO es login Y NO es ruta pública -> Redirigir a Login
+  if (!user && !request.nextUrl.pathname.startsWith('/login') && !isPublicRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // 2. Si el usuario SÍ está logueado y trata de entrar al login...
+  // 2. Si HAY usuario y trata de ir a login -> Redirigir a Home
   if (user && request.nextUrl.pathname.startsWith('/login')) {
-    // ...redirigirlo al Dashboard (Home)
     return NextResponse.redirect(new URL('/', request.url))
   }
 
@@ -76,13 +76,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Coincidir con todas las rutas excepto:
-     * - _next/static (archivos estáticos)
-     * - _next/image (archivos de optimización de imágenes)
-     * - favicon.ico (icono de la pestaña)
-     * - Archivos de imágenes (svg, png, jpg, etc.)
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
