@@ -1,4 +1,4 @@
-'use client';
+'use client'; // Agregamos esto para evitar problemas en Next.js App Router
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,24 +16,26 @@ interface CompetitorAnalysisProps {
   nearby: number;
 }
 
-export function CompetitorAnalysis({ competitors, total, nearby }: CompetitorAnalysisProps) {
-  // Calcular insights
-  const avgRating = competitors.length > 0 
-    ? competitors.reduce((sum, c) => sum + c.rating, 0) / competitors.length 
+export function CompetitorAnalysis({ competitors = [], total = 0, nearby = 0 }: CompetitorAnalysisProps) {
+  // Cálculos seguros (evitando división por cero)
+  const safeCompetitors = Array.isArray(competitors) ? competitors : [];
+  
+  const avgRating = safeCompetitors.length > 0 
+    ? safeCompetitors.reduce((sum, c) => sum + c.rating, 0) / safeCompetitors.length 
     : 0;
   
-  const closestCompetitor = competitors.length > 0
-    ? competitors.reduce((min, c) => c.distance < min.distance ? c : min)
+  const closestCompetitor = safeCompetitors.length > 0
+    ? [...safeCompetitors].sort((a, b) => a.distance - b.distance)[0]
     : null;
 
-  const highRatedCompetitors = competitors.filter(c => c.rating >= 4.5);
+  const highRatedCompetitors = safeCompetitors.filter(c => c.rating >= 4.5);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <MapPin className="h-5 w-5 text-blue-600" />
-          Análisis de Competencia (5-10 km)
+          Análisis de Competencia (Zona San Pedro)
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -57,13 +59,14 @@ export function CompetitorAnalysis({ competitors, total, nearby }: CompetitorAna
 
         {/* Lista de Competidores */}
         <div className="space-y-2">
-          <h4 className="text-sm font-medium text-slate-600">Principales Competidores</h4>
-          {competitors.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">
-              No se encontraron competidores en el rango especificado
-            </p>
+          <h4 className="text-sm font-medium text-slate-600">Top Competidores</h4>
+          {safeCompetitors.length === 0 ? (
+            <div className="text-center py-6 bg-slate-50 rounded border border-dashed">
+              <p className="text-sm text-slate-500">No se encontraron datos.</p>
+              <p className="text-xs text-slate-400">Verifica tu API Key de Google.</p>
+            </div>
           ) : (
-            competitors.slice(0, 5).map((competitor, idx) => (
+            safeCompetitors.slice(0, 5).map((competitor, idx) => (
               <div
                 key={idx}
                 className="flex items-center justify-between p-3 bg-white border rounded-lg hover:shadow-sm transition-shadow"
@@ -93,53 +96,6 @@ export function CompetitorAnalysis({ competitors, total, nearby }: CompetitorAna
                 </Badge>
               </div>
             ))
-          )}
-        </div>
-
-        {/* Insights */}
-        <div className="border-t pt-4 space-y-2">
-          <h4 className="text-sm font-medium text-slate-600">💡 Insights</h4>
-          
-          {highRatedCompetitors.length > 0 && (
-            <div className="flex items-start gap-2 p-3 bg-orange-50 rounded-lg">
-              <AlertCircle className="h-4 w-4 text-orange-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs font-medium text-orange-900">
-                  {highRatedCompetitors.length} competidores con rating ≥4.5
-                </p>
-                <p className="text-xs text-orange-700 mt-1">
-                  Mantén calidad premium para competir en este mercado
-                </p>
-              </div>
-            </div>
-          )}
-
-          {closestCompetitor && closestCompetitor.distance < 7000 && (
-            <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg">
-              <TrendingUp className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs font-medium text-blue-900">
-                  Competidor cercano a {(closestCompetitor.distance / 1000).toFixed(1)} km
-                </p>
-                <p className="text-xs text-blue-700 mt-1">
-                  Diferénciate con servicios exclusivos o mejor atención
-                </p>
-              </div>
-            </div>
-          )}
-
-          {avgRating < 4.0 && (
-            <div className="flex items-start gap-2 p-3 bg-green-50 rounded-lg">
-              <Star className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs font-medium text-green-900">
-                  Oportunidad: Rating promedio bajo ({avgRating.toFixed(1)})
-                </p>
-                <p className="text-xs text-green-700 mt-1">
-                  Puedes destacar fácilmente con excelente servicio
-                </p>
-              </div>
-            </div>
           )}
         </div>
       </CardContent>

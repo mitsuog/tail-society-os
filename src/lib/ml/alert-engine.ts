@@ -66,7 +66,7 @@ export class AlertEngine {
     // 5. Alertas de Rendimiento
     newAlerts.push(...this.analyzePerformance(data.transactions));
 
-    // Agregar y notificar
+    // Agregar y notificar (CON VALIDACIÓN DE DUPLICADOS)
     newAlerts.forEach(alert => {
       this.addAlert(alert);
     });
@@ -99,9 +99,10 @@ export class AlertEngine {
     const today = format(new Date(), 'yyyy-MM-dd');
     const todaySales = dailySales.get(today) || 0;
 
+    // CORRECCIÓN: Usamos 'today' en el ID para evitar duplicados si corre varias veces al día
     if (todaySales > mean + 2 * stdDev) {
       alerts.push({
-        id: `anomaly-high-${Date.now()}`,
+        id: `anomaly-high-${today}`, 
         type: 'anomaly',
         severity: 'info',
         title: '🚀 ¡Ventas Excepcionales Hoy!',
@@ -116,7 +117,7 @@ export class AlertEngine {
       });
     } else if (todaySales < mean - 2 * stdDev) {
       alerts.push({
-        id: `anomaly-low-${Date.now()}`,
+        id: `anomaly-low-${today}`,
         type: 'anomaly',
         severity: 'warning',
         title: '📉 Ventas Inusualmente Bajas',
@@ -141,10 +142,13 @@ export class AlertEngine {
     const alerts: Alert[] = [];
 
     predictions.forEach((pred, idx) => {
+      // CORRECCIÓN: Usamos la fecha predicha en el ID en lugar del índice
+      const dateKey = format(parseISO(pred.date), 'yyyy-MM-dd');
+
       // Alerta de alta demanda esperada
       if (pred.predictedRevenue > 8000 && pred.confidence > 0.8) {
         alerts.push({
-          id: `opportunity-high-demand-${idx}`,
+          id: `opportunity-high-demand-${dateKey}`,
           type: 'opportunity',
           severity: 'info',
           title: `💰 Alta Demanda Esperada - ${format(parseISO(pred.date), 'EEEE d', { locale: es })}`,
@@ -163,7 +167,7 @@ export class AlertEngine {
       // Alerta de clima adverso
       if (pred.factors.weather < 0.3 && pred.confidence > 0.7) {
         alerts.push({
-          id: `risk-weather-${idx}`,
+          id: `risk-weather-${dateKey}`,
           type: 'risk',
           severity: 'warning',
           title: `☔ Clima Adverso - ${format(parseISO(pred.date), 'EEEE d', { locale: es })}`,
@@ -267,7 +271,7 @@ export class AlertEngine {
 
     if (atRiskVIPs.length > 0) {
       alerts.push({
-        id: 'customer-vip-risk',
+        id: 'customer-vip-risk', // ID Fijo: Se validará en addAlert para no duplicar
         type: 'customer',
         severity: 'warning',
         title: `⚠️ ${atRiskVIPs.length} Clientes VIP en Riesgo`,
@@ -345,7 +349,7 @@ export class AlertEngine {
     if (Math.abs(change) > 15) {
       const isPositive = change > 0;
       alerts.push({
-        id: 'performance-weekly',
+        id: 'performance-weekly', // ID Fijo
         type: 'performance',
         severity: isPositive ? 'info' : 'warning',
         title: isPositive ? '📈 Crecimiento Semanal Fuerte' : '📉 Caída en Rendimiento Semanal',
@@ -366,8 +370,18 @@ export class AlertEngine {
 
   /**
    * Agregar alerta y notificar suscriptores
+   * CORRECCIÓN: Evita agregar alertas si el ID ya existe
    */
   private addAlert(alert: Alert) {
+    // 1. Verificar si ya existe una alerta con este ID
+    const exists = this.alerts.some(a => a.id === alert.id);
+    
+    if (exists) {
+        // Si ya existe, no hacemos nada (o podríamos actualizar el timestamp si quisieras)
+        return; 
+    }
+
+    // 2. Si no existe, la agregamos al inicio
     this.alerts.unshift(alert);
     
     // Limitar a últimas 100 alertas
@@ -452,19 +466,22 @@ export class NotificationService {
    * Envía notificación al navegador (Web Push API)
    */
   async sendBrowserNotification(alert: Alert) {
-    if (!('Notification' in window)) {
-      console.warn('Browser does not support notifications');
+    if (typeof window === 'undefined' || !('Notification' in window)) {
       return;
     }
 
     if (Notification.permission === 'granted') {
-      new Notification(alert.title, {
-        body: alert.message,
-        icon: this.getIconForType(alert.type),
-        badge: '/icon-badge.png',
-        tag: alert.id,
-        requireInteraction: alert.severity === 'critical'
-      });
+      try {
+        new Notification(alert.title, {
+          body: alert.message,
+          icon: this.getIconForType(alert.type),
+          badge: '/icon-badge.png',
+          tag: alert.id,
+          requireInteraction: alert.severity === 'critical'
+        });
+      } catch (e) {
+        // Ignorar errores de notificación si la pestaña está oculta o bloqueada
+      }
     } else if (Notification.permission !== 'denied') {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
