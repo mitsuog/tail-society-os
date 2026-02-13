@@ -1,4 +1,3 @@
-// src/app/api/intelligence/sales-data/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
@@ -6,6 +5,7 @@ import { subDays, startOfDay, endOfDay } from 'date-fns';
 /**
  * GET /api/intelligence/sales-data
  * Lee datos YA sincronizados por /api/integrations/zettle
+ * Requisito: Tabla 'sales_transactions' debe existir y tener datos.
  */
 export async function GET(request: Request) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const startDate = subDays(new Date(), days);
     const endDate = new Date();
 
-    // LEER de sales_transactions (ya sincronizado por el otro endpoint)
+    // LEER de sales_transactions (Sincronizado previamente desde Zettle)
     const { data: transactions, error } = await supabase
       .from('sales_transactions')
       .select('*')
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       .order('timestamp', { ascending: true });
 
     if (error) {
-      console.error('Error fetching transactions:', error);
+      console.error('Supabase error fetching transactions:', error);
       return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 });
     }
 
@@ -43,16 +43,25 @@ export async function GET(request: Request) {
 function analyzeTransactions(transactions: any[]) {
   const totalRevenue = transactions.reduce((sum, t) => sum + (t.total_amount || 0), 0);
   const transactionCount = transactions.length;
-  const avgTicket = totalRevenue / (transactionCount || 1);
+  // Protección contra división por cero
+  const avgTicket = transactionCount > 0 ? totalRevenue / transactionCount : 0;
 
   // Productos vs Servicios
   let productsRevenue = 0;
   let servicesRevenue = 0;
 
   transactions.forEach(t => {
+    // Asumimos que la tabla tiene banderas booleanas o identificadores de tipo
     if (t.is_grooming) servicesRevenue += t.total_amount;
     if (t.is_store) productsRevenue += t.total_amount;
+    
+    // Fallback: Si no hay banderas, categorizar por lógica de negocio si es necesario
+    // Ejemplo: if (!t.is_grooming && !t.is_store) { ... }
   });
+
+  // Cálculo seguro de porcentajes
+  const productsPercentage = totalRevenue > 0 ? (productsRevenue / totalRevenue) * 100 : 0;
+  const servicesPercentage = totalRevenue > 0 ? (servicesRevenue / totalRevenue) * 100 : 0;
 
   return {
     totalRevenue,
@@ -60,7 +69,19 @@ function analyzeTransactions(transactions: any[]) {
     transactionCount,
     productsRevenue,
     servicesRevenue,
-    productsPercentage: (productsRevenue / totalRevenue) * 100,
-    servicesPercentage: (servicesRevenue / totalRevenue) * 100
+    productsPercentage,
+    servicesPercentage,
+    // Agregamos desglose diario para gráficos futuros si se requiere
+    dailyData: groupTransactionsByDay(transactions) 
   };
+}
+
+// Helper opcional para gráficas de línea
+function groupTransactionsByDay(transactions: any[]) {
+    const grouped: Record<string, number> = {};
+    transactions.forEach(t => {
+        const date = t.timestamp.split('T')[0];
+        grouped[date] = (grouped[date] || 0) + t.total_amount;
+    });
+    return Object.entries(grouped).map(([date, amount]) => ({ date, amount }));
 }

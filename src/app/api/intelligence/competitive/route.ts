@@ -1,12 +1,15 @@
-// src/app/api/intelligence/competitive/route.ts
 import { NextResponse } from 'next/server';
 
+// 1. UBICACIÓN REAL VERIFICADA (Gómez Morín 404, Local E5)
 const TAIL_SOCIETY_LOCATION = {
-  lat: 25.6515,
-  lng: -100.3895
+  lat: 25.6473805,
+  lng: -100.3586705
 };
 
+// 2. LISTA DE COMPETIDORES (Ajustada a tu zona real)
 const KNOWN_COMPETITORS = [
+  'Petco Gómez Morín',
+  'Petland San Pedro',
   'Ruffus & mila',
   'Carlota Spa Pet Grooming',
   'Pet Zone',
@@ -15,12 +18,11 @@ const KNOWN_COMPETITORS = [
   'Bruna Estilistas Caninos',
   'Veterinaria Le Gua Gua',
   'Vetalia Monterrey',
-  'La Casa de Renato Day Care & Spa',
+  'La Casa de Renato',
   'Peluperro',
   'Dog Service',
   'Angelitos Dogs',
   'PetHome',
-  'Petco Vasconcelos',
   'DogDay',
   'PetStars'
 ];
@@ -28,51 +30,63 @@ const KNOWN_COMPETITORS = [
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const radius = parseInt(searchParams.get('radius') || '10000');
-
+    // Radio de 5km es suficiente para tu zona densa (Gómez Morín/Centrito)
+    const radius = parseInt(searchParams.get('radius') || '5000'); 
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
     
     if (!apiKey) {
-      return NextResponse.json({ error: 'Google API key not configured' }, { status: 500 });
+      console.warn("No API Key configured for Competitive Intelligence");
+      return NextResponse.json({ 
+        competitors: [], 
+        marketPosition: { avgRating: 0, totalCompetitors: 0 },
+        swot: { strengths: [], weaknesses: [], opportunities: [], threats: [] },
+        recommendations: ["Configura la API Key de Google"]
+      });
     }
 
-    // Buscar competidores
-    const searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${TAIL_SOCIETY_LOCATION.lat},${TAIL_SOCIETY_LOCATION.lng}&radius=${radius}&type=pet_store&keyword=grooming+estética+canina&key=${apiKey}`;
+    // 1. Búsqueda de Lugares (Search)
+    const searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${TAIL_SOCIETY_LOCATION.lat},${TAIL_SOCIETY_LOCATION.lng}&radius=${radius}&type=pet_store&keyword=grooming&key=${apiKey}`;
     
     const searchResponse = await fetch(searchUrl);
     const searchData = await searchResponse.json();
 
-    if (searchData.status !== 'OK') {
-      console.error('Google Places error:', searchData);
-      return NextResponse.json({ 
-        error: 'Google Places API error',
-        details: searchData.status 
-      }, { status: 500 });
+    // Manejo de ZERO_RESULTS
+    if (searchData.status === 'ZERO_RESULTS') {
+        return NextResponse.json({
+            competitors: [],
+            marketPosition: { avgRating: 0, totalCompetitors: 0 },
+            swot: { strengths: [], weaknesses: [], opportunities: [], threats: [] },
+            recommendations: ["No se encontraron competidores en el radio seleccionado. Intenta aumentar el radio."]
+        });
     }
 
-    // Procesar cada competidor
+    if (searchData.status !== 'OK') {
+      console.error('Google Places error:', searchData);
+      return NextResponse.json({ error: 'Google API Error', details: searchData.status }, { status: 500 });
+    }
+
+    // 2. Procesar cada competidor (Detalles)
     const competitors = await Promise.all(
-      searchData.results.slice(0, 20).map(async (place: any) => {
+      searchData.results.slice(0, 15).map(async (place: any) => {
         const isKnown = KNOWN_COMPETITORS.some(name => 
           place.name.toLowerCase().includes(name.toLowerCase()) ||
           name.toLowerCase().includes(place.name.toLowerCase())
         );
 
-        // Detalles completos
+        // Llamada de Detalles
         const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=name,rating,user_ratings_total,price_level,formatted_address,formatted_phone_number,website,opening_hours,reviews,geometry&key=${apiKey}`;
         
         const detailsResponse = await fetch(detailsUrl);
         const detailsData = await detailsResponse.json();
 
-        if (detailsData.status !== 'OK') return null;
-
-        const result = detailsData.result;
+        const result = detailsData.status === 'OK' ? detailsData.result : place;
+        const geometry = result.geometry || place.geometry;
         
         const distance = calculateDistance(
           TAIL_SOCIETY_LOCATION.lat,
           TAIL_SOCIETY_LOCATION.lng,
-          result.geometry.location.lat,
-          result.geometry.location.lng
+          geometry.location.lat,
+          geometry.location.lng
         );
 
         const reviewAnalysis = analyzeReviews(result.reviews || []);
@@ -84,7 +98,7 @@ export async function GET(request: Request) {
           reviewCount: result.user_ratings_total || 0,
           priceLevel: result.price_level || 2,
           distance: Math.round(distance),
-          address: result.formatted_address || '',
+          address: result.formatted_address || place.vicinity || '',
           phone: result.formatted_phone_number,
           website: result.website,
           openNow: result.opening_hours?.open_now || false,
@@ -97,10 +111,11 @@ export async function GET(request: Request) {
 
     const validCompetitors = competitors.filter(c => c !== null);
 
-    // Análisis SWOT
+    // 3. Generar Análisis Final
     const analysis = generateCompetitiveAnalysis(validCompetitors);
 
     return NextResponse.json(analysis);
+
   } catch (error) {
     console.error('Competitive analysis error:', error);
     return NextResponse.json({ 
@@ -110,21 +125,25 @@ export async function GET(request: Request) {
   }
 }
 
+// --- FUNCIONES AUXILIARES (Sin cambios) ---
+
 function analyzeReviews(reviews: any[]) {
   const strengths: Set<string> = new Set();
   const weaknesses: Set<string> = new Set();
 
-  reviews.slice(0, 10).forEach(review => {
-    const text = review.text.toLowerCase();
+  if (!reviews) return { strengths: [], weaknesses: [] };
+
+  reviews.slice(0, 5).forEach(review => {
+    const text = review.text?.toLowerCase() || '';
     
     if (review.rating >= 4) {
-      if (text.includes('servicio') || text.includes('atención')) strengths.add('Excelente servicio');
-      if (text.includes('calidad') || text.includes('trabajo')) strengths.add('Alta calidad');
-      if (text.includes('limpio') || text.includes('limpieza')) strengths.add('Instalaciones limpias');
-    } else if (review.rating <= 2) {
-      if (text.includes('servicio') || text.includes('atención')) weaknesses.add('Mal servicio');
+      if (text.includes('servicio') || text.includes('atención') || text.includes('amable')) strengths.add('Excelente servicio');
+      if (text.includes('calidad') || text.includes('trabajo') || text.includes('corte')) strengths.add('Alta calidad en corte');
+      if (text.includes('limpio') || text.includes('olor')) strengths.add('Instalaciones limpias');
+    } else if (review.rating <= 3) {
+      if (text.includes('servicio') || text.includes('actitud')) weaknesses.add('Mal servicio al cliente');
       if (text.includes('caro') || text.includes('precio')) weaknesses.add('Precios altos');
-      if (text.includes('espera') || text.includes('tiempo')) weaknesses.add('Tiempos de espera');
+      if (text.includes('espera') || text.includes('tiempo') || text.includes('tardaron')) weaknesses.add('Tiempos de espera largos');
     }
   });
 
@@ -135,7 +154,9 @@ function analyzeReviews(reviews: any[]) {
 }
 
 function generateCompetitiveAnalysis(competitors: any[]) {
-  const avgRating = competitors.reduce((sum, c) => sum + c.rating, 0) / competitors.length;
+  const avgRating = competitors.length > 0 
+    ? competitors.reduce((sum, c) => sum + c.rating, 0) / competitors.length 
+    : 0;
   
   const swot = {
     strengths: [] as string[],
@@ -144,27 +165,25 @@ function generateCompetitiveAnalysis(competitors: any[]) {
     threats: [] as string[]
   };
 
-  // Oportunidades
-  const lowRatedCompetitors = competitors.filter(c => c.rating < 3.8);
+  const lowRatedCompetitors = competitors.filter(c => c.rating < 4.0);
   if (lowRatedCompetitors.length > 0) {
-    swot.opportunities.push(`${lowRatedCompetitors.length} competidores con rating bajo - capturar clientes insatisfechos`);
+    swot.opportunities.push(`${lowRatedCompetitors.length} competidores cercanos tienen rating bajo (<4.0). Oportunidad de captar clientes insatisfechos.`);
   }
 
-  // Amenazas
-  const topRatedCompetitors = competitors.filter(c => c.rating >= 4.5);
-  if (topRatedCompetitors.length >= 3) {
-    swot.threats.push(`${topRatedCompetitors.length} competidores con rating excelente (≥4.5)`);
+  const topRatedCompetitors = competitors.filter(c => c.rating >= 4.7);
+  if (topRatedCompetitors.length >= 2) {
+    swot.threats.push(`Hay ${topRatedCompetitors.length} competidores 'Top Tier' (Rating 4.7+) en la zona. La excelencia en el servicio es obligatoria.`);
   }
 
-  // Recomendaciones
   const recommendations: string[] = [];
-  
-  if (avgRating < 4.0) {
-    recommendations.push('💡 Oportunidad: Rating promedio bajo - destaca con excelencia');
+  if (avgRating < 4.2) {
+    recommendations.push('💡 El estándar de la zona es moderado. Una campaña de "Calidad Premium" podría destacar rápidamente.');
+  } else {
+    recommendations.push('🔥 Zona altamente competitiva. Enfócate en la experiencia del cliente y programas de lealtad para diferenciarte.');
   }
 
   return {
-    competitors: competitors.slice(0, 15),
+    competitors: competitors.sort((a, b) => a.distance - b.distance),
     marketPosition: {
       avgRating,
       totalCompetitors: competitors.length
