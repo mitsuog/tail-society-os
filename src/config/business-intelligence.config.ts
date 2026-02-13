@@ -4,21 +4,21 @@
 
 export const BUSINESS_CONFIG = {
   // Información del Negocio
-  business: {
-    name: 'Tail Society
-    location: {
-      lat: 25.6866, // Monterrey, Nuevo León
-      lng: -100.3161,
-      address: 'Av. Manuel Gomez Morin 404 Local E5 Villas de Aragon San Pedro Garza Garcia'
-      timezone: 'America/Monterrey'
-    },
+business: {
+  name: 'Tail Society',
+  location: {
+    lat: 25.6515,
+    lng: -100.3895,
+    address: 'Av. Manuel Gomez Morin 404 Local E5 Villas de Aragon San Pedro Garza Garcia',
+    timezone: 'America/Monterrey'
+  },
     hours: {
-      monday: { open: '09:00', close: '19:00' },
-      tuesday: { open: '09:00', close: '19:00' },
-      wednesday: { open: '09:00', close: '19:00' },
-      thursday: { open: '09:00', close: '19:00' },
-      friday: { open: '09:00', close: '19:00' },
-      saturday: { open: '09:00', close: '17:00' },
+      monday: { open: '10:00', close: '18:30' },
+      tuesday: { open: '10:00', close: '18:30' },
+      wednesday: { open: '10:00', close: '18:30' },
+      thursday: { open: '10:00', close: '18:30' },
+      friday: { open: '10:00', close: '18:30' },
+      saturday: { open: '10:00', close: '18:00' },
       sunday: null // Cerrado
     }
   },
