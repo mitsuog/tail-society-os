@@ -80,6 +80,7 @@ async function ejemplo2_AnalisisOportunidad() {
   const todayWeather = data.weather[0];
   const todayTrends = data.trends[0];
   const trafficData = {
+    date: new Date().toISOString().split('T')[0], // Add date property
     level: 'medium' as const,
     delay_minutes: 5,
     incidents: 0
