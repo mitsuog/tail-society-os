@@ -5,19 +5,20 @@ import { format, startOfWeek, endOfWeek, subWeeks, addWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+// [ELIMINADO] Calendar, Popover imports ya no son necesarios aquí
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { 
-    CalendarIcon, Loader2, RefreshCw, Save, Scissors, Store, Calculator,
-    ArrowUpCircle, Coins, ChevronLeft, ChevronRight, Download, Eye, AlertTriangle
+    Loader2, RefreshCw, Save, Scissors, Store, Calculator,
+    ArrowUpCircle, Coins, ChevronLeft, ChevronRight, Download, Eye
 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { getPayrollPreview, savePayrollRun } from '@/app/actions/payroll-actions';
 import { toast } from "sonner";
 import { downloadSingleReceipt, previewReceipt } from "@/utils/payroll-receipt-generator";
+// [NUEVO] Importamos el componente especializado
+import { WeekSelector } from "@/components/payroll/WeekSelector";
 
 // --- Interfaces ---
 interface PayrollDetail {
@@ -59,7 +60,8 @@ interface PayrollData {
 
 export default function PayrollPage() {
   // Estado inicial: Semana actual
-  const [date, setDate] = useState<{ from: Date; to: Date } | undefined>(() => {
+  // Aseguramos que nunca sea undefined para el WeekSelector
+  const [date, setDate] = useState<{ from: Date; to: Date }>(() => {
     const now = new Date();
     return { 
         from: startOfWeek(now, { weekStartsOn: 1 }), 
@@ -72,7 +74,7 @@ export default function PayrollPage() {
   const [data, setData] = useState<PayrollData | null>(null);
 
   // --- LÓGICA DE SINCRONIZACIÓN Y CARGA ---
-  const syncAndLoadData = async (currentDate: { from: Date; to: Date } | undefined) => {
+  const syncAndLoadData = async (currentDate: { from: Date; to: Date }) => {
     if (!currentDate?.from || !currentDate?.to) return;
     
     setLoading(true);
@@ -160,7 +162,7 @@ export default function PayrollPage() {
     <div className="flex flex-col h-full w-full overflow-hidden bg-slate-50/30">
         
         <div className="flex-1 overflow-y-auto w-full">
-            <div className="max-w-7xl mx-auto p-2 md:p-6 space-y-4 md:space-y-8 pb-24">
+            <div className="max-w-7xl mx-auto pt-16 px-4 pb-24 md:p-6 space-y-4 md:space-y-8">
             
             {/* --- HEADER --- */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-4 md:p-6 rounded-xl border shadow-sm">
@@ -171,49 +173,15 @@ export default function PayrollPage() {
                 
                 <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto bg-slate-50 p-2 rounded-lg border border-slate-100">
                     <div className="flex items-center gap-1 w-full sm:w-auto justify-between sm:justify-start">
-                        <Button variant="ghost" size="icon" onClick={handlePrevWeek} disabled={loading}>
-                            <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button 
-                                    variant="outline" 
-                                    className={cn("w-full sm:w-[260px] justify-center text-center font-medium bg-white border-slate-200 shadow-sm text-xs md:text-sm truncate px-2", !date && "text-muted-foreground")}
-                                >
-                                    <CalendarIcon className="mr-2 h-3 w-3 md:h-4 md:w-4 text-slate-500 shrink-0" />
-                                    {date?.from ? (
-                                        date.to ? 
-                                        `${format(date.from, "dd MMM", { locale: es })} - ${format(date.to, "dd MMM", { locale: es })}` 
-                                        : format(date.from, "dd MMM", { locale: es })
-                                    ) : <span>Seleccionar periodo</span>}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0 z-50" align="start">
-                                {/* FIX: initialFocus eliminado y onSelect tipado manualmente */}
-                                <Calendar
-                                    mode="range"
-                                    defaultMonth={date?.from}
-                                    selected={date}
-                                    onSelect={(range) => {
-                                        if (range?.from) {
-                                            setDate({ 
-                                                from: range.from, 
-                                                to: range.to || range.from 
-                                            });
-                                        }
-                                    }}
-                                    numberOfMonths={1}
-                                    locale={es}
-                                    weekStartsOn={1}
-                                    className="rounded-md border shadow pointer-events-auto"
-                                />
-                            </PopoverContent>
-                        </Popover>
-
-                        <Button variant="ghost" size="icon" onClick={handleNextWeek} disabled={loading}>
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
+                        {/* [CAMBIO PRINCIPAL]
+                            Aquí integramos el WeekSelector que reemplaza al Popover+Calendar manual.
+                            Esto asegura que la visualización del rango seleccionado sea correcta (toda la semana coloreada).
+                        */}
+                        <WeekSelector 
+                            selectedWeek={date}
+                            onWeekChange={(newDate) => setDate(newDate)}
+                            disabled={loading}
+                        />
                     </div>
 
                     <div className="hidden sm:block h-6 w-px bg-slate-200 mx-1"></div>

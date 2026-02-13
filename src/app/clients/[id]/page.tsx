@@ -2,11 +2,14 @@ import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { 
   Phone, MapPin, Mail, Clock, 
-  Filter, XCircle, History, FileSignature, FileText, CalendarPlus, AlertCircle, Pencil, Eye, Dog, Calendar
+  Filter, XCircle, History, FileSignature, FileText, CalendarPlus, 
+  AlertCircle, Pencil, Eye, Dog, Calendar, User, ChevronRight, Hash
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import EditClientDialog from '@/components/EditClientDialog'; 
 import AddPetDialog from '@/components/AddPetDialog';
 import SignatureLinkButton from '@/components/SignatureLinkButton';
@@ -16,6 +19,7 @@ import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog
 
 export const dynamic = 'force-dynamic';
 
+// --- INTERFACES (Intactas) ---
 interface Pet {
   id: string;
   client_id: string;
@@ -64,6 +68,7 @@ export default async function ClientDetail({
   params: Promise<{ id: string }>, 
   searchParams: Promise<{ pet_id?: string }> 
 }) {
+  // --- LÓGICA DE DATOS (Intacta) ---
   const { id } = await params;
   const { pet_id } = await searchParams;
   const supabase = await createClient();
@@ -72,9 +77,13 @@ export default async function ClientDetail({
   
   if (!rawClient) {
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen text-gray-600 gap-4 p-4">
-            <p className="text-lg">Cliente no encontrado</p>
-            <Link href="/admin/clients"><Button variant="outline">Volver al Directorio</Button></Link>
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 text-gray-600 gap-4 p-4">
+            <div className="bg-white p-8 rounded-xl shadow-sm text-center">
+              <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+              <p className="text-lg font-medium text-gray-900">Cliente no encontrado</p>
+              <p className="text-sm text-gray-500 mb-6">Es posible que haya sido eliminado o el ID sea incorrecto.</p>
+              <Link href="/admin/clients"><Button variant="outline">Volver al Directorio</Button></Link>
+            </div>
         </div>
     );
   }
@@ -123,227 +132,300 @@ export default async function ClientDetail({
     }
   }
 
+  // Helper para iniciales
+  const getInitials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+
   return (
-      // SCROLL FIX: Quitamos estilo inline de padding y usamos clases utilitarias
-      <div className="w-full bg-gradient-to-b from-blue-50/30 to-white pb-8">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-6 space-y-4 sm:space-y-6">
+      <div className="min-h-screen bg-slate-50/50 pb-12">
+        {/* TOP BAR / BREADCRUMB */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-4 h-14 flex items-center shadow-sm">
+             <div className="max-w-7xl mx-auto w-full flex items-center gap-2 text-sm text-gray-500">
+                <BackButton />
+                <span className="hidden sm:inline">Directorio</span>
+                <ChevronRight size={14} className="hidden sm:inline" />
+                <span className="font-medium text-gray-900 truncate">Expediente de {client.full_name}</span>
+             </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         
-          {/* HEADER */}
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <BackButton />
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 truncate mb-2">
-                  {client.full_name}
-                </h1>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="text-xs h-5 px-2 font-normal text-gray-700 bg-gray-100 border-gray-300">
-                    Cliente desde {clientSinceDate.getFullYear()}
-                  </Badge>
+          {/* --- HERO PROFILE CARD --- */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-6 md:p-8">
+              <div className="flex flex-col md:flex-row gap-6 md:items-start">
+                
+                {/* Avatar & Main Info */}
+                <div className="flex items-start gap-4 flex-1">
+                  <Avatar className="h-20 w-20 border-4 border-slate-50 shadow-inner">
+                    <AvatarFallback className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white text-2xl font-bold">
+                      {getInitials(client.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
                   
-                  {allSigned ? (
-                    <Badge className="bg-blue-50 text-blue-700 border-blue-300 gap-1 text-xs h-5">
-                      <FileSignature size={10}/> Contrato Vigente
-                    </Badge>
-                  ) : someSigned ? (
-                    <Badge variant="outline" className="text-orange-600 border-orange-300 bg-orange-50 gap-1 text-xs h-5">
-                      <AlertCircle size={10}/> Firma Parcial
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-gray-600 border-gray-300 bg-gray-50 gap-1 text-xs h-5">
-                      <FileText size={10}/> Sin Firma
-                    </Badge>
-                  )}
+                  <div className="space-y-2">
+                    <div>
+                      <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+                        {client.full_name}
+                      </h1>
+                      <div className="flex items-center gap-2 mt-1">
+                         <Badge variant="secondary" className="font-normal text-gray-600 bg-gray-100">
+                           Cliente desde {clientSinceDate.getFullYear()}
+                         </Badge>
+                         {/* Status Contract Badge */}
+                         {allSigned ? (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 gap-1 hover:bg-emerald-100">
+                              <FileSignature size={12}/> Contrato Vigente
+                            </Badge>
+                          ) : someSigned ? (
+                            <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 gap-1">
+                              <AlertCircle size={12}/> Firma Parcial
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-gray-500 border-gray-300 bg-gray-50 gap-1">
+                              <FileText size={12}/> Sin Firma
+                            </Badge>
+                          )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contact Info Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm text-gray-600 bg-slate-50 p-4 rounded-lg border border-slate-100 min-w-[300px]">
+                   <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-blue-600">
+                        <Phone size={16} />
+                      </div>
+                      <span className="font-medium text-gray-900">{client.phone}</span>
+                   </div>
+                   <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-indigo-600">
+                        <Mail size={16} />
+                      </div>
+                      <span className="truncate max-w-[180px]" title={client.email || ''}>{client.email || "No registrado"}</span>
+                   </div>
+                   <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-rose-500">
+                        <MapPin size={16} />
+                      </div>
+                      <span>Monterrey, NL</span>
+                   </div>
+                   <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-slate-500">
+                        <Hash size={16} />
+                      </div>
+                      <span className="font-mono text-xs text-gray-400">ID: ...{client.id.slice(-6)}</span>
+                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs sm:text-sm text-gray-700 mb-4">
-              <span className="flex items-center gap-1.5">
-                <Phone size={14} className="text-gray-500"/> {client.phone}
-              </span>
-              <span className="hidden sm:inline text-gray-300">|</span>
-              <span className="flex items-center gap-1.5 truncate max-w-[200px] sm:max-w-none">
-                <Mail size={14} className="text-gray-500"/> {client.email || "Sin email"}
-              </span>
-              <span className="hidden sm:inline text-gray-300">|</span>
-              <span className="flex items-center gap-1.5">
-                <MapPin size={14} className="text-gray-500"/> Monterrey, NL
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-              <NewAppointmentDialog 
-                initialClient={{ id: client.id, full_name: client.full_name, phone: client.phone }}
-                customTrigger={
-                  <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 text-sm w-full sm:w-auto justify-center shadow-sm">
-                    <CalendarPlus className="mr-2 h-4 w-4"/> Nueva Cita
-                  </Button>
-                }
-              />
-              
-              <div className="flex items-center gap-2 flex-1 sm:flex-initial">
-                <div className="flex items-center bg-gray-100 rounded-lg p-0.5 border border-gray-300 flex-1 sm:flex-initial">
-                  <SignatureLinkButton clientId={client.id} isSigned={allSigned} />
-                  {hasPets && (
-                    <Link href={`/waiver/${client.id}?mode=view`} target="_blank" className="flex-1 sm:flex-initial">
-                      <Button variant="ghost" size="sm" className="h-8 text-xs text-gray-700 hover:text-blue-700 hover:bg-white px-3 border-l border-gray-300 rounded-l-none w-full sm:w-auto" title="Ver Documento">
-                        <Eye size={14} className="sm:mr-1.5"/> <span className="sm:inline">Ver</span>
-                      </Button>
-                    </Link>
-                  )}
+            {/* Actions Toolbar */}
+            <div className="bg-slate-50/50 border-t border-gray-100 px-6 py-3 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                <div className="flex gap-2 w-full sm:w-auto">
+                    {/* Nueva Cita - Botón Principal */}
+                    <NewAppointmentDialog 
+                      initialClient={{ id: client.id, full_name: client.full_name, phone: client.phone }}
+                      customTrigger={
+                        <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm w-full sm:w-auto">
+                          <CalendarPlus className="mr-2 h-4 w-4"/> Nueva Cita
+                        </Button>
+                      }
+                    />
                 </div>
-                
-                <AddPetDialog clientId={client.id} />
-                
-                <EditClientDialog 
-                  client={client} 
-                  trigger={
-                    <Button variant="outline" size="sm" className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-blue-400 h-9 w-9 sm:w-auto px-2 sm:px-3">
-                      <Pencil size={14} className="sm:mr-0"/>
-                    </Button>
-                  }
-                />
-              </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                    <div className="h-8 w-px bg-gray-200 mx-1 hidden sm:block"></div>
+                    
+                    <SignatureLinkButton clientId={client.id} isSigned={allSigned} />
+                    
+                    {hasPets && (
+                      <Link href={`/waiver/${client.id}?mode=view`} target="_blank">
+                        <Button variant="outline" size="sm" className="bg-white hover:bg-slate-50 text-slate-700 border-slate-300">
+                          <Eye size={14} className="mr-2"/> Ver Contrato
+                        </Button>
+                      </Link>
+                    )}
+                    
+                    <AddPetDialog clientId={client.id} />
+
+                    <EditClientDialog 
+                      client={client} 
+                      trigger={
+                        <Button variant="outline" size="icon" className="h-9 w-9 bg-white border-slate-300 hover:bg-slate-50 text-slate-600" title="Editar Cliente">
+                          <Pencil size={15} />
+                        </Button>
+                      }
+                    />
+                </div>
             </div>
           </div>
 
-          {/* CONTENIDO */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
+          {/* --- CONTENT GRID --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             
-            {/* SIDEBAR */}
-            <div className="lg:col-span-3 space-y-4">
+            {/* SIDEBAR (Notas & Mascotas) */}
+            <div className="lg:col-span-4 space-y-6">
               
+              {/* Notas Importantes */}
               {(client.notes || client.internal_tags.length > 0) && (
-                <Card className="p-3 text-xs space-y-2 border-gray-200 bg-white shadow-md">
-                  {client.internal_tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {client.internal_tags.map((tag: string) => (
-                        <span key={tag} className="text-[10px] font-bold bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-200 flex items-center gap-1 capitalize">
-                          <Filter size={10}/> {tag.replace('_', ' ')}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {client.notes && (
-                    <div className="bg-gray-50 text-gray-700 p-2.5 rounded border border-gray-200 leading-relaxed italic text-xs">
-                      {client.notes}
-                    </div>
-                  )}
+                <Card className="p-4 border-amber-100 bg-amber-50/50 shadow-sm space-y-3">
+                   <h3 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-2">
+                     <AlertCircle size={14}/> Notas Internas
+                   </h3>
+                   
+                   {client.internal_tags.length > 0 && (
+                     <div className="flex flex-wrap gap-1.5">
+                       {client.internal_tags.map((tag: string) => (
+                         <Badge key={tag} variant="outline" className="bg-white border-amber-200 text-amber-700 capitalize">
+                           <Filter size={10} className="mr-1"/> {tag.replace('_', ' ')}
+                         </Badge>
+                       ))}
+                     </div>
+                   )}
+                   
+                   {client.notes && (
+                     <p className="text-sm text-gray-700 italic leading-relaxed bg-white/60 p-3 rounded-lg border border-amber-100/50">
+                       "{client.notes}"
+                     </p>
+                   )}
                 </Card>
               )}
 
+              {/* Lista de Mascotas */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-2">
-                    <Dog size={14} className="text-gray-500"/> Mascotas ({pets.length})
-                  </h3>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
-                  {pets.map(pet => (
-                    <PetCard 
-                      key={pet.id} 
-                      pet={pet} 
-                      clientId={client.id}
-                      isActive={pet_id === pet.id}
-                    />
-                  ))}
-                  
-                  {pets.length === 0 && (
-                    <Card className="p-6 text-center border-dashed border-gray-300 bg-gray-50">
-                      <p className="text-xs text-gray-500">Sin mascotas registradas</p>
-                    </Card>
-                  )}
-                </div>
+                 <div className="flex items-center justify-between px-1">
+                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                       <Dog size={16} className="text-blue-500"/> Mascotas ({pets.length})
+                    </h3>
+                 </div>
+                 
+                 <div className="space-y-3">
+                   {pets.map(pet => (
+                     <div key={pet.id} className={`transition-transform duration-200 ${pet_id === pet.id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-xl' : ''}`}>
+                         <PetCard 
+                           pet={pet} 
+                           clientId={client.id}
+                           isActive={pet_id === pet.id}
+                         />
+                     </div>
+                   ))}
+                   
+                   {pets.length === 0 && (
+                     <div className="text-center py-8 bg-white border-2 border-dashed border-gray-200 rounded-xl">
+                        <Dog className="mx-auto h-8 w-8 text-gray-300 mb-2"/>
+                        <p className="text-sm text-gray-500">No hay mascotas registradas</p>
+                     </div>
+                   )}
+                 </div>
               </div>
             </div>
 
-            {/* HISTORIAL */}
-            <div className="lg:col-span-9">
-              <Card className="border-gray-200 bg-white shadow-md overflow-hidden">
-                
-                <div className="p-3 sm:p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-teal-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <History size={16} className="text-gray-600"/>
-                    <span className="text-sm font-bold text-gray-800">Historial de Servicios</span>
-                  </div>
-                  
-                  {pet_id && activePetName ? (
-                    <div className="flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1.5 rounded-full text-xs font-medium border border-blue-300">
-                      <Filter size={12}/> 
-                      <span className="hidden sm:inline">Filtrado por:</span>
-                      <strong>{activePetName}</strong>
-                      <Link href={`/clients/${client.id}`} title="Ver todos">
-                        <XCircle size={14} className="ml-1 cursor-pointer hover:text-red-600 transition-colors"/>
-                      </Link>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-gray-500">Historial completo</span>
-                  )}
-                </div>
+            {/* MAIN CONTENT (Historial) */}
+            <div className="lg:col-span-8 space-y-4">
+               <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <History className="text-gray-400"/> Historial de Servicios
+                  </h2>
+               </div>
 
-                {/* LISTA DE CITAS */}
-                <div>
+               <Card className="bg-white border-gray-200 shadow-sm overflow-hidden min-h-[400px]">
+                  {/* Filter Header */}
+                  <div className="bg-gray-50/80 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                      {pet_id && activePetName ? (
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm text-gray-500">Filtrando por:</span>
+                            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200 px-3 py-1 text-sm font-medium gap-2">
+                               {activePetName}
+                               <Link href={`/clients/${client.id}`} title="Quitar filtro">
+                                 <XCircle size={14} className="hover:text-blue-900 cursor-pointer"/>
+                               </Link>
+                            </Badge>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-500">Mostrando todas las mascotas</span>
+                      )}
+                      
+                      <div className="text-xs font-medium text-gray-400">
+                        {displayedAppointments.length} registro(s)
+                      </div>
+                  </div>
+
+                  {/* Appointments List */}
                   {displayedAppointments.length > 0 ? (
                     <div className="divide-y divide-gray-100">
-                      {displayedAppointments.map((appt) => (
-                        <div key={appt.id} className="p-3 sm:p-4 hover:bg-blue-50/30 transition-colors group">
-                          <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-                            
-                            <div className="sm:w-[160px] shrink-0">
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <Badge variant="outline" className="text-[10px] h-5 px-2 rounded border-gray-300 text-gray-700 font-medium bg-white">
-                                  {appt.pet?.name || 'Mascota'}
-                                </Badge>
-                              </div>
-                              <div className="flex items-baseline gap-2">
-                                <p className="text-sm sm:text-base font-bold text-gray-900">
-                                  {new Date(appt.date).toLocaleDateString('es-MX', {
-                                    day: 'numeric', 
-                                    month: 'short', 
-                                    year: '2-digit'
-                                  })}
-                                </p>
-                                <p className="text-xs text-gray-500 flex items-center gap-1">
-                                  <Clock size={10}/> {new Date(appt.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                </p>
-                              </div>
-                            </div>
+                      {displayedAppointments.map((appt) => {
+                         const apptDate = new Date(appt.date);
+                         return (
+                          <div key={appt.id} className="p-4 hover:bg-slate-50 transition-colors group">
+                             <div className="flex gap-4 items-start">
+                                
+                                {/* Date Block */}
+                                <div className="flex-shrink-0 w-16 bg-white border border-gray-200 rounded-lg text-center overflow-hidden shadow-sm">
+                                   <div className="bg-blue-50 text-blue-700 text-[10px] font-bold uppercase py-1 border-b border-blue-100">
+                                      {apptDate.toLocaleDateString('es-MX', { month: 'short' }).replace('.', '')}
+                                   </div>
+                                   <div className="py-2">
+                                      <span className="text-xl font-bold text-gray-900 block leading-none">
+                                        {apptDate.getDate()}
+                                      </span>
+                                      <span className="text-[10px] text-gray-400 block mt-1">
+                                        {apptDate.getFullYear()}
+                                      </span>
+                                   </div>
+                                </div>
 
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-gray-800 font-medium line-clamp-2 sm:line-clamp-1 group-hover:line-clamp-none transition-all">
-                                {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
-                              </p>
-                              {appt.secondary_services_text && (
-                                <p className="text-xs text-gray-500 mt-1 line-clamp-1 group-hover:line-clamp-none">
-                                  {appt.secondary_services_text}
-                                </p>
-                              )}
-                            </div>
+                                {/* Content */}
+                                <div className="flex-1 min-w-0 pt-1">
+                                   <div className="flex items-center justify-between mb-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="text-xs bg-white text-gray-600 border-gray-200 font-normal">
+                                          {appt.pet?.name || 'Mascota'}
+                                        </Badge>
+                                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                                           <Clock size={12}/> {apptDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        </span>
+                                      </div>
+                                      <span className="font-mono font-semibold text-gray-900 bg-green-50 text-green-700 px-2 py-0.5 rounded text-sm">
+                                         ${appt.price_charged?.toLocaleString() || 0}
+                                      </span>
+                                   </div>
 
-                            <div className="text-left sm:text-right sm:w-[100px] shrink-0 sm:border-l border-transparent sm:border-gray-200 sm:pl-4">
-                              <span className="text-base sm:text-lg font-bold text-green-700">
-                                ${appt.price_charged?.toLocaleString() || 0}
-                              </span>
-                            </div>
+                                   <h4 className="text-sm font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">
+                                      {appt.notes?.replace('ServicioCD:', '').split('. Staff:')[0] || "Servicio General"}
+                                   </h4>
+                                   
+                                   {appt.secondary_services_text && (
+                                     <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                                       + {appt.secondary_services_text}
+                                     </p>
+                                   )}
+                                </div>
+                             </div>
                           </div>
-                        </div>
-                      ))}
+                         );
+                      })}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-16 text-gray-400 p-4">
-                      <div className="bg-blue-50 p-4 rounded-full mb-3">
-                        <Calendar size={32} className="text-blue-400 opacity-50"/>
-                      </div>
-                      <p className="text-sm font-medium text-gray-600">Sin registros de servicios</p>
-                      {pet_id && <p className="text-xs mt-1 text-center text-gray-500">Para esta mascota en particular</p>}
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                       <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                          <Calendar className="text-slate-300 w-8 h-8"/>
+                       </div>
+                       <h3 className="text-gray-900 font-medium mb-1">Sin historial disponible</h3>
+                       <p className="text-sm text-gray-500 max-w-xs mx-auto">
+                         {pet_id ? "Esta mascota no tiene citas registradas aún." : "Este cliente no tiene servicios previos."}
+                       </p>
+                       <div className="mt-6">
+                         <NewAppointmentDialog 
+                            initialClient={{ id: client.id, full_name: client.full_name, phone: client.phone }}
+                            customTrigger={<Button variant="outline">Agendar Primera Cita</Button>}
+                         />
+                       </div>
                     </div>
                   )}
-                </div>
-              </Card>
+               </Card>
             </div>
-
+            
           </div>
         </div>
       </div>
