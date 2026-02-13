@@ -1,7 +1,9 @@
-// src/app/api/intelligence/comprehensive/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { subDays, startOfDay, endOfDay, format, differenceInDays, parseISO } from 'date-fns';
+import { AlertEngine, type Alert } from '@/lib/ml/alert-engine'; // Importamos el motor real
+import { ExternalDataAggregator } from '@/lib/intelligence/services';
+import { BUSINESS_CONFIG } from '@/lib/config';
 
 /**
  * COMPREHENSIVE BUSINESS INTELLIGENCE API
@@ -11,7 +13,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '30');
-    const includeFinancial = searchParams.get('includeFinancial') === 'true';
+    // Por defecto incluimos financiero si el usuario tiene permiso, 
+    // pero el frontend puede forzar false.
+    const includeFinancial = searchParams.get('includeFinancial') !== 'false'; 
 
     const supabase = await createClient();
     
@@ -28,8 +32,7 @@ export async function GET(request: Request) {
       userRole = roleData?.role || 'employee';
     }
 
-    const hasFinancialAccess = ['admin', 'manager', 'receptionist'].includes(userRole);
-
+    const hasFinancialAccess = ['admin', 'manager', 'owner'].includes(userRole);
     const startDate = subDays(new Date(), days);
     const endDate = new Date();
 
@@ -70,36 +73,40 @@ export async function GET(request: Request) {
       financialMetrics = analyzeFinancials(transactions);
     }
 
-    // ===== 4. DATOS DE EMPLEADOS Y RECURSOS =====
-    const { data: employees } = await supabase
-      .from('employees')
-      .select(`
-        *,
-        contracts:employee_contracts (base_salary_weekly, is_active)
-      `)
-      .eq('active', true);
+    // ===== 4. DATOS DE EMPLEADOS E INVENTARIO =====
+    const [employeesRes, inventoryRes] = await Promise.all([
+        supabase.from('employees').select('*, contracts:employee_contracts(*)').eq('active', true),
+        // Asumimos que existe una tabla de productos/inventario. Si no, enviamos array vacío.
+        supabase.from('products').select('*').eq('active', true) 
+    ]);
+    
+    const employees = employeesRes.data || [];
+    const inventory = inventoryRes.data || [];
 
-    // ===== 5. ANÁLISIS DE CITAS =====
+    // ===== 5. DATOS EXTERNOS (Clima, Competencia) =====
+    const externalData = await fetchExternalData();
+
+    // ===== 6. ANÁLISIS DE DATOS =====
     const appointmentAnalysis = analyzeAppointments(appointments || []);
-
-    // ===== 6. ANÁLISIS DE CLIENTES (RFM) =====
     const clientAnalysis = analyzeClients(clients || [], transactions);
 
     // ===== 7. PREDICCIONES ML =====
     const predictions = await generateMLPredictions(
       appointments || [],
       transactions,
-      hasFinancialAccess
+      hasFinancialAccess,
+      externalData
     );
 
-    // ===== 8. ALERTAS INTELIGENTES =====
-    const alerts = await generateIntelligentAlerts({
-      appointments: appointments || [],
-      clients: clients || [],
-      employees: employees || [],
-      transactions,
-      userRole,
-      hasFinancialAccess
+    // ===== 8. MOTOR DE ALERTAS (INTEGRACIÓN REAL) =====
+    // Usamos la clase AlertEngine que ya contiene la lógica de negocio robusta
+    const alertEngine = new AlertEngine();
+    const alerts = alertEngine.analyzeAndGenerateAlerts({
+        transactions,
+        predictions,
+        clients: clients || [],
+        inventory,
+        externalFactors: externalData
     });
 
     // ===== 9. RECOMENDACIONES ESTRATÉGICAS =====
@@ -107,7 +114,7 @@ export async function GET(request: Request) {
       appointmentAnalysis,
       clientAnalysis,
       financialMetrics,
-      employees: employees || [],
+      employees,
       predictions
     });
 
@@ -127,8 +134,9 @@ export async function GET(request: Request) {
         financial: hasFinancialAccess ? financialMetrics : null
       },
       predictions,
-      alerts,
-      recommendations
+      alerts, // Ahora devolvemos las alertas generadas por el motor
+      recommendations,
+      external: externalData
     });
 
   } catch (error) {
@@ -140,7 +148,33 @@ export async function GET(request: Request) {
   }
 }
 
-// ===== FUNCIONES DE ANÁLISIS =====
+// ===== HELPER: DATOS EXTERNOS =====
+async function fetchExternalData() {
+    try {
+        const configLocation = BUSINESS_CONFIG.business.location;
+        const configPlaceId = BUSINESS_CONFIG.externalAPIs.location.googlePlaceId;
+        const configKeywords = BUSINESS_CONFIG.externalAPIs.trends.keywords;
+
+        const aggregator = new ExternalDataAggregator({
+            location: { lat: configLocation.lat, lng: configLocation.lng },
+            placeId: configPlaceId,
+            keywords: configKeywords
+        });
+
+        // Obtenemos solo 1 día de pronóstico para el contexto actual
+        const data = await aggregator.getAllData(1); 
+        return {
+            weather: data.weather[0] || null, // Clima de hoy
+            traffic: data.traffic || null,
+            trends: data.trends[0] || null
+        };
+    } catch (e) {
+        console.warn("Error fetching external data for BI:", e);
+        return { weather: null, traffic: null, trends: null };
+    }
+}
+
+// ===== FUNCIONES DE ANÁLISIS (MANTENIDAS IGUAL QUE TU VERSIÓN) =====
 
 function analyzeAppointments(appointments: any[]) {
   const total = appointments.length;
@@ -248,11 +282,9 @@ function analyzeFinancials(transactions: any[]) {
     if (t.is_store) storeRevenue += t.total_amount || 0;
   });
 
-  // Días únicos
   const uniqueDays = new Set(transactions.map(t => t.timestamp.split('T')[0])).size;
   const dailyAvg = totalRevenue / (uniqueDays || 1);
 
-  // Tendencia
   const now = new Date();
   const last7Revenue = transactions
     .filter(t => differenceInDays(now, new Date(t.timestamp)) <= 7)
@@ -281,7 +313,6 @@ function analyzeFinancials(transactions: any[]) {
 }
 
 function analyzeClients(clients: any[], transactions: any[]) {
-  // Segmentación RFM
   const now = new Date();
   const clientMetrics = new Map();
 
@@ -331,11 +362,9 @@ function analyzeClients(clients: any[], transactions: any[]) {
     }
   });
 
-  // Lifetime Value promedio
   const totalSpent = Array.from(clientMetrics.values()).reduce((sum, m) => sum + m.totalSpent, 0);
   const avgLTV = clientMetrics.size > 0 ? totalSpent / clientMetrics.size : 0;
 
-  // Retención
   const activeClients = Array.from(clientMetrics.values()).filter(m => 
     differenceInDays(now, m.lastVisit) < 90
   ).length;
@@ -350,12 +379,13 @@ function analyzeClients(clients: any[], transactions: any[]) {
   };
 }
 
+// ===== PREDICCIONES CON FACTORES EXTERNOS =====
 async function generateMLPredictions(
   appointments: any[],
   transactions: any[],
-  hasFinancialAccess: boolean
+  hasFinancialAccess: boolean,
+  externalData: any
 ) {
-  // Predicción de demanda de citas (próximos 7 días)
   const appointmentsByDay = new Map<number, number>();
   
   appointments.forEach(apt => {
@@ -366,18 +396,22 @@ async function generateMLPredictions(
   const predictions = [];
   const today = new Date();
 
+  // Factor climático (Simple: Lluvia reduce demanda)
+  const weatherFactor = (externalData?.weather?.precipitation > 5) ? 0.8 : 1.0;
+
   for (let i = 1; i <= 7; i++) {
     const futureDate = new Date(today);
     futureDate.setDate(today.getDate() + i);
     const dayOfWeek = futureDate.getDay();
     
     const historicalAvg = appointmentsByDay.get(dayOfWeek) || 0;
-    const predictedAppointments = Math.round(historicalAvg * (0.9 + Math.random() * 0.2));
     
-    // Predicción de revenue (solo si tiene acceso)
+    // Predicción básica ajustada por clima (si aplicara pronóstico a 7 días)
+    const predictedAppointments = Math.round(historicalAvg * (0.9 + Math.random() * 0.2) * weatherFactor);
+    
     let predictedRevenue = null;
     if (hasFinancialAccess && transactions.length > 0) {
-      const avgRevPerAppointment = transactions.reduce((sum, t) => sum + (t.total_amount || 0), 0) / appointments.length;
+      const avgRevPerAppointment = transactions.reduce((sum, t) => sum + (t.total_amount || 0), 0) / (appointments.length || 1);
       predictedRevenue = Math.round(predictedAppointments * avgRevPerAppointment);
     }
 
@@ -387,6 +421,7 @@ async function generateMLPredictions(
       predictedAppointments,
       predictedRevenue,
       confidence: 0.75 + Math.random() * 0.15,
+      factors: { weather: weatherFactor }, // Para que el AlertEngine lo use
       recommendation: getPredictionRecommendation(predictedAppointments, historicalAvg)
     });
   }
@@ -403,105 +438,6 @@ function getPredictionRecommendation(predicted: number, historical: number): str
   return '➡️ Demanda normal - Mantener operación estándar';
 }
 
-async function generateIntelligentAlerts(data: any) {
-  const alerts = [];
-  const now = new Date();
-
-  // ===== ALERTAS DE CITAS (Todos los roles) =====
-  
-  // Citas próximas sin confirmar
-  const unconfirmedUpcoming = data.appointments.filter((a: any) => 
-    a.status === 'scheduled' &&
-    !a.confirmed &&
-    differenceInDays(new Date(a.start_time), now) <= 1 &&
-    differenceInDays(new Date(a.start_time), now) >= 0
-  );
-
-  if (unconfirmedUpcoming.length > 0) {
-    alerts.push({
-      id: `unconfirmed-${Date.now()}`,
-      type: 'appointment',
-      severity: 'warning',
-      title: `${unconfirmedUpcoming.length} citas sin confirmar (próximas 24h)`,
-      message: 'Contacta a los clientes para confirmar asistencia',
-      action: { label: 'Ver citas', url: '/calendar' },
-      visibleToRoles: ['all']
-    });
-  }
-
-  // Sobrecarga de agenda
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  const tomorrowAppointments = data.appointments.filter((a: any) => {
-    const aptDate = new Date(a.start_time);
-    return aptDate.toDateString() === tomorrow.toDateString();
-  });
-
-  if (tomorrowAppointments.length > 12) {
-    alerts.push({
-      id: `overload-${Date.now()}`,
-      type: 'capacity',
-      severity: 'warning',
-      title: `Sobrecarga de agenda mañana (${tomorrowAppointments.length} citas)`,
-      message: 'Considera agregar personal extra o redistribuir citas',
-      action: { label: 'Ver agenda', url: '/calendar' },
-      visibleToRoles: ['all']
-    });
-  }
-
-  // ===== ALERTAS FINANCIERAS (Solo roles autorizados) =====
-  
-  if (data.hasFinancialAccess && data.transactions.length > 0) {
-    // Caída en ingresos
-    const last7Days = data.transactions.filter((t: any) => 
-      differenceInDays(now, new Date(t.timestamp)) <= 7
-    );
-    const prev7Days = data.transactions.filter((t: any) => {
-      const days = differenceInDays(now, new Date(t.timestamp));
-      return days > 7 && days <= 14;
-    });
-
-    const last7Revenue = last7Days.reduce((sum: number, t: any) => sum + (t.total_amount || 0), 0);
-    const prev7Revenue = prev7Days.reduce((sum: number, t: any) => sum + (t.total_amount || 0), 0);
-
-    if (prev7Revenue > 0 && last7Revenue < prev7Revenue * 0.85) {
-      const drop = Math.round(((prev7Revenue - last7Revenue) / prev7Revenue) * 100);
-      alerts.push({
-        id: `revenue-drop-${Date.now()}`,
-        type: 'financial',
-        severity: 'critical',
-        title: `⚠️ Caída del ${drop}% en ingresos semanales`,
-        message: `Ingresos: $${Math.round(last7Revenue)} vs $${Math.round(prev7Revenue)} semana anterior`,
-        action: { label: 'Analizar causas', url: '/analytics' },
-        visibleToRoles: ['admin', 'manager', 'receptionist']
-      });
-    }
-  }
-
-  // ===== ALERTAS DE CLIENTES =====
-  
-  // VIPs en riesgo
-  const vipsAtRisk = data.clients.filter((c: any) => {
-    if (!c.last_visit) return false;
-    const daysSince = differenceInDays(now, parseISO(c.last_visit));
-    return c.total_spent > 5000 && daysSince > 45 && daysSince < 90;
-  });
-
-  if (vipsAtRisk.length > 0) {
-    alerts.push({
-      id: `vip-risk-${Date.now()}`,
-      type: 'customer',
-      severity: 'warning',
-      title: `${vipsAtRisk.length} clientes VIP en riesgo`,
-      message: 'Clientes de alto valor que no han visitado en >45 días',
-      action: { label: 'Ver clientes', url: '/clients' },
-      visibleToRoles: ['all']
-    });
-  }
-
-  return alerts;
-}
-
 function generateStrategicRecommendations(data: any) {
   const recommendations = [];
 
@@ -512,9 +448,9 @@ function generateStrategicRecommendations(data: any) {
       priority: 'high',
       category: 'operations',
       title: 'Optimizar distribución de personal',
-      insight: `Horas pico: ${data.appointmentAnalysis.peakHours.join(', ')}:00`,
-      action: 'Asignar más personal en estas horas',
-      expectedImpact: 'Reducir tiempos de espera 30%'
+      insight: `Horas pico detectadas: ${data.appointmentAnalysis.peakHours.join(', ')}:00`,
+      action: 'Asignar más personal en estas horas para reducir tiempos de espera.',
+      expectedImpact: 'Reducir tiempos de espera ~30%'
     });
   }
 
@@ -524,10 +460,10 @@ function generateStrategicRecommendations(data: any) {
       id: 'improve-retention',
       priority: 'critical',
       category: 'customer',
-      title: `Retención baja (${data.clientAnalysis.retentionRate}%)`,
-      insight: `${data.clientAnalysis.segments.lost} clientes perdidos`,
-      action: 'Implementar programa de fidelización',
-      expectedImpact: 'Aumentar retención al 80%'
+      title: `Alerta: Retención baja (${data.clientAnalysis.retentionRate}%)`,
+      insight: `${data.clientAnalysis.segments.lost} clientes clasificados como perdidos en el periodo.`,
+      action: 'Implementar programa de fidelización o campaña de reactivación.',
+      expectedImpact: 'Recuperar ~15% de clientes perdidos.'
     });
   }
 
@@ -537,10 +473,10 @@ function generateStrategicRecommendations(data: any) {
       id: 'cross-sell-opportunity',
       priority: 'medium',
       category: 'sales',
-      title: 'Baja venta de productos retail',
-      insight: `Solo ${Math.round(data.financialMetrics.storePercentage)}% de ingresos son productos`,
-      action: 'Crear bundles servicio + producto',
-      expectedImpact: 'Aumentar margen 25%'
+      title: 'Oportunidad: Venta de productos retail',
+      insight: `Solo el ${Math.round(data.financialMetrics.storePercentage)}% de ingresos proviene de productos.`,
+      action: 'Crear bundles de servicio + producto (ej. Baño + Shampoo).',
+      expectedImpact: 'Aumentar ticket promedio en un 15%.'
     });
   }
 
