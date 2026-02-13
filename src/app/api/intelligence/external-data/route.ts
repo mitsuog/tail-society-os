@@ -2,28 +2,35 @@ import { NextResponse } from 'next/server';
 import { ExternalDataAggregator } from '@/lib/intelligence/services';
 import { BUSINESS_CONFIG } from '@/lib/config';
 
-// ESTA ES LA CLAVE: "export async function GET" tiene que estar escrita exactamente así
 export async function GET(request: Request) {
   try {
-    // 1. Leemos la configuración central (BUSINESS_CONFIG)
+    // 1. Extraer configuración
     const location = BUSINESS_CONFIG.business.location;
     const placeId = BUSINESS_CONFIG.externalAPIs.location.googlePlaceId;
     const keywords = BUSINESS_CONFIG.externalAPIs.trends.keywords;
 
-    // 2. Instanciamos el servicio con esos datos
+    // 2. Instanciar Agregador
     const aggregator = new ExternalDataAggregator({
       location: { lat: location.lat, lng: location.lng },
       placeId: placeId,
       keywords: keywords
     });
 
-    // 3. Obtenemos la data (Weather, Traffic, Trends, Insights)
+    // 3. Obtener Datos
     const data = await aggregator.getAllData(7);
 
-    // 4. Calculamos el puntaje de oportunidad
+    // 4. Calcular Oportunidad
+    // FIX: Aseguramos que el objeto de tráfico tenga la fecha requerida
+    const trafficData = data.traffic || { 
+      date: new Date().toISOString(), // <--- ESTO ES LO QUE FALTABA
+      level: 'medium', 
+      delay_minutes: 0, 
+      incidents: 0 
+    };
+
     const opportunity = aggregator.calculateBusinessOpportunityScore(
       data.weather[0],
-      data.traffic,
+      trafficData, 
       data.trends[0]
     );
 
@@ -34,6 +41,6 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('External Data API Error:', error);
-    return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch external data' }, { status: 500 });
   }
 }
