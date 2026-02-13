@@ -18,7 +18,11 @@ import {
   ShieldCheck,
   CalendarPlus,
   UserCircle,
-  BarChart3 // [NUEVO] Icono para Analytics/Finanzas
+  BarChart3, // [NUEVO] Icono para Analytics/Finanzas
+  BrainCogIcon,
+  LayoutDashboardIcon,
+  UserRoundCogIcon,
+  CogIcon
 } from 'lucide-react'; 
 import { cn } from '@/lib/utils';
 import AddClientDialog from '@/components/AddClientDialog'; 
@@ -52,7 +56,7 @@ export default function Sidebar({
   const allMenuItems = [
     { 
       name: 'Dashboard', 
-      icon: Home, 
+      icon: LayoutDashboardIcon, 
       href: '/', 
       allowedRoles: ['admin', 'receptionist', 'employee'] 
     },
@@ -76,6 +80,12 @@ export default function Sidebar({
       allowedRoles: ['admin', 'gerente'] 
     },
     { 
+      name: 'Business Intelligence', 
+      icon: BrainCogIcon, 
+      href: '/intelligence', 
+      allowedRoles: ['admin', 'gerente'] 
+    },
+    { 
       name: 'Servicios', 
       icon: Scissors, 
       href: '/admin/services', 
@@ -83,13 +93,13 @@ export default function Sidebar({
     },
     { 
       name: 'Equipo', 
-      icon: UserCircle, 
+      icon: UserRoundCogIcon, 
       href: '/admin/staff', 
       allowedRoles: ['admin'] 
     },
     { 
       name: 'Admin', 
-      icon: ShieldCheck, 
+      icon: CogIcon, 
       href: '/admin/users', 
       allowedRoles: ['admin'] 
     },
