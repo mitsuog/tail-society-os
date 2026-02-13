@@ -17,7 +17,8 @@ import {
   Users,
   ShieldCheck,
   CalendarPlus,
-  UserCircle // Icono para Staff
+  UserCircle,
+  BarChart3 // [NUEVO] Icono para Analytics/Finanzas
 } from 'lucide-react'; 
 import { cn } from '@/lib/utils';
 import AddClientDialog from '@/components/AddClientDialog'; 
@@ -61,12 +62,18 @@ export default function Sidebar({
       href: '/appointments', 
       allowedRoles: ['admin', 'receptionist', 'employee'] 
     },
-    // --- NUEVO: CLIENTES ---
     { 
       name: 'Clientes', 
       icon: Users, 
       href: '/admin/clients', 
       allowedRoles: ['admin', 'receptionist'] 
+    },
+    // --- NUEVO MODULO DE ANALYTICS / FINANZAS ---
+    { 
+      name: 'Finanzas', 
+      icon: BarChart3, 
+      href: '/admin/finance', 
+      allowedRoles: ['admin', 'gerente'] 
     },
     { 
       name: 'Servicios', 
@@ -189,7 +196,7 @@ export default function Sidebar({
               <button 
                 onClick={() => {
                     setAppointmentModalOpen(true);
-                    closeMobileMenu(); // Cerrar menú al hacer click en móvil
+                    closeMobileMenu(); 
                 }}
                 className={cn(
                   "flex items-center gap-3 w-full bg-slate-100 hover:bg-white text-slate-900 transition-all shadow-lg shadow-white/5 mb-3 group relative overflow-hidden ring-1 ring-slate-200",
@@ -228,7 +235,7 @@ export default function Sidebar({
                 <Link 
                   key={item.name}
                   href={item.href}
-                  onClick={closeMobileMenu} // Cerrar al navegar en móvil
+                  onClick={closeMobileMenu} 
                   className={cn(
                     "group flex items-center rounded-xl transition-all relative overflow-hidden",
                     isDesktopCollapsed ? "justify-center p-3" : "px-4 py-3 gap-3",

@@ -386,7 +386,7 @@ export default async function ClientDetail({
                                            <Clock size={12}/> {apptDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                         </span>
                                       </div>
-                                      <span className="font-mono font-semibold text-gray-900 bg-green-50 text-green-700 px-2 py-0.5 rounded text-sm">
+                                      <span className="font-mono font-semibold bg-green-50 text-green-700 px-2 py-0.5 rounded text-sm">
                                          ${appt.price_charged?.toLocaleString() || 0}
                                       </span>
                                    </div>
