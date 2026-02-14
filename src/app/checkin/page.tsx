@@ -1,127 +1,362 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createClient } from '@/utils/supabase/client';
-import { CheckCircle2, Plus, PawPrint, User, Phone, Mail, Sparkles } from 'lucide-react';
+import { CheckCircle2, Plus, PawPrint, User, Phone, Mail, Sparkles, AlertTriangle, Syringe, Bone, Volume2, Users as UsersIcon, HeartPulse, Skull, FileSignature, Loader2, CalendarIcon, X } from 'lucide-react';
 import { BreedCombobox } from '@/components/kiosk/BreedCombobox';
+import dynamic from 'next/dynamic';
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
-type Step = 'welcome' | 'client-info' | 'pet-info' | 'review' | 'success';
+const SignatureCanvas = dynamic(() => import('react-signature-canvas'), {
+  ssr: false,
+  loading: () => <div className="w-full h-48 bg-slate-100 rounded-xl animate-pulse"></div>
+}) as any;
 
+type Step = 'welcome' | 'client-info' | 'pet-info' | 'waiver' | 'success';
+
+// EXACTAMENTE COMO AddPetDialog.tsx
 interface Pet {
   name: string;
+  species: string;
   breed: string;
-  age: string;
-  weight: string;
-  gender: 'male' | 'female';
+  color: string;
+  size: string;
+  birth_date: string;
+  photo_url: string;
+  is_vaccined: boolean;
+  has_allergies: boolean;
+  has_illness: boolean;
+  has_conditions: boolean;
+  is_senior: boolean;
+  is_aggressive: boolean;
+  is_nervous: boolean;
+  is_noisereactive: boolean;
+  convive: boolean;
+  treats: boolean;
   notes: string;
 }
 
+// EXACTAMENTE COMO tus dialogs
 interface ClientData {
-  fullName: string;
+  full_name: string;
   phone: string;
   email: string;
 }
 
-export default function KioskPage() {
+const INITIAL_PET_DATA: Pet = {
+  name: '',
+  species: 'Perro',
+  breed: '',
+  color: '',
+  size: 'Chico',
+  birth_date: '',
+  photo_url: '',
+  is_vaccined: false,
+  has_allergies: false,
+  has_illness: false,
+  has_conditions: false,
+  is_senior: false,
+  is_aggressive: false,
+  is_nervous: false,
+  is_noisereactive: false,
+  convive: false,
+  treats: false,
+  notes: ''
+};
+
+// Componente DatePicker Simple - Sin dependencia de Calendar
+function BirthDatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
+  const [open, setOpen] = useState(false);
+  
+  // Parse current value
+  const currentDate = value ? new Date(value) : null;
+  const [year, setYear] = useState(currentDate?.getFullYear() || new Date().getFullYear());
+  const [month, setMonth] = useState(currentDate?.getMonth() || 0);
+  const [day, setDay] = useState(currentDate?.getDate() || 1);
+
+  // Generar opciones
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 21 }, (_, i) => currentYear - i);
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  
+  // Calcular días del mes
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  const handleApply = () => {
+    const date = new Date(year, month, day);
+    onChange(format(date, 'yyyy-MM-dd'));
+    setOpen(false);
+  };
+
+  const handleClear = () => {
+    onChange('');
+    setOpen(false);
+  };
+
+  const displayText = value 
+    ? format(new Date(value), "d 'de' MMMM, yyyy", { locale: es })
+    : 'Selecciona una fecha';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-full justify-between h-12 text-left font-normal"
+        >
+          <span className={value ? "text-slate-900" : "text-slate-400"}>
+            {displayText}
+          </span>
+          <CalendarIcon className="h-4 w-4 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <div className="p-4 space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-500">Año</Label>
+            <Select value={String(year)} onValueChange={(val) => setYear(parseInt(val))}>
+              <SelectTrigger className="h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {years.map((y) => (
+                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-500">Mes</Label>
+            <Select value={String(month)} onValueChange={(val) => setMonth(parseInt(val))}>
+              <SelectTrigger className="h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {months.map((m, idx) => (
+                  <SelectItem key={idx} value={String(idx)}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-500">Día</Label>
+            <Select value={String(day)} onValueChange={(val) => setDay(parseInt(val))}>
+              <SelectTrigger className="h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {days.map((d) => (
+                  <SelectItem key={d} value={String(d)}>{d}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={handleClear}
+              className="flex-1 text-red-600 hover:bg-red-50"
+            >
+              <X size={14} className="mr-1" /> Borrar
+            </Button>
+            <Button
+              onClick={handleApply}
+              className="flex-1 bg-slate-900 text-white hover:bg-slate-800"
+            >
+              Aplicar
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export default function CheckinPage() {
   const [step, setStep] = useState<Step>('welcome');
   const [clientData, setClientData] = useState<ClientData>({
-    fullName: '',
+    full_name: '',
     phone: '',
     email: ''
   });
   const [pets, setPets] = useState<Pet[]>([]);
-  const [currentPet, setCurrentPet] = useState<Pet>({
-    name: '',
-    breed: '',
-    age: '',
-    weight: '',
-    gender: 'male',
-    notes: ''
-  });
-  const [showAddAnotherDialog, setShowAddAnotherDialog] = useState(false);
+  const [currentPet, setCurrentPet] = useState<Pet>(INITIAL_PET_DATA);
+  const [clientId, setClientId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
+  const sigCanvas = useRef<any>(null);
+  const supabase = createClient();
 
   const handleStartRegistration = () => {
     setStep('client-info');
   };
 
-  const handleClientInfoSubmit = (e: React.FormEvent) => {
+  const handleClientInfoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStep('pet-info');
-  };
-
-  const handlePetInfoSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPets([...pets, currentPet]);
-    setShowAddAnotherDialog(true);
-  };
-
-  const handleAddAnotherPet = () => {
-    setCurrentPet({
-      name: '',
-      breed: '',
-      age: '',
-      weight: '',
-      gender: 'male',
-      notes: ''
-    });
-    setShowAddAnotherDialog(false);
-    // Mantenemos en pet-info para agregar otra
-  };
-
-  const handleFinishAddingPets = () => {
-    setShowAddAnotherDialog(false);
-    setStep('review');
-  };
-
-  const handleFinalSubmit = async () => {
     setLoading(true);
-    const supabase = createClient();
 
     try {
-      // 1. Crear cliente (SIN campo address)
-      const { data: client, error: clientError } = await supabase
+      const { data: client, error } = await supabase
         .from('clients')
         .insert({
-          full_name: clientData.fullName,
+          full_name: clientData.full_name,
           phone: clientData.phone,
-          email: clientData.email
+          email: clientData.email.trim() === '' ? null : clientData.email,
+          status: 'active',
+          is_active: true
         })
         .select()
         .single();
 
-      if (clientError) throw clientError;
+      if (error) throw error;
 
-      // 2. Crear mascotas
-      const petInserts = pets.map(pet => ({
-        client_id: client.id,
-        name: pet.name,
-        breed: pet.breed,
-        age: parseInt(pet.age) || null,
-        weight: parseFloat(pet.weight) || null,
-        gender: pet.gender,
-        notes: pet.notes
-      }));
-
-      const { error: petsError } = await supabase
-        .from('pets')
-        .insert(petInserts);
-
-      if (petsError) throw petsError;
-
-      setStep('success');
-    } catch (error) {
-      console.error('Error en registro:', error);
-      alert('Hubo un error al registrarte. Por favor intenta de nuevo.');
+      setClientId(client.id);
+      setStep('pet-info');
+      toast.success('Cliente registrado');
+    } catch (error: any) {
+      console.error('Error:', error);
+      if (error.code === '23505') {
+        toast.error('Ya existe un cliente con ese teléfono o email');
+      } else {
+        toast.error('Error al registrar: ' + error.message);
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePetInfoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!currentPet.name.trim()) {
+      toast.error('El nombre de la mascota es obligatorio');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // EXACTAMENTE como AddPetDialog.tsx
+      const petPayload = {
+        client_id: clientId,
+        name: currentPet.name,
+        species: currentPet.species,
+        breed: currentPet.breed || 'Mestizo',
+        color: currentPet.color || null,
+        size: currentPet.size,
+        birth_date: currentPet.birth_date || null,
+        photo_url: currentPet.photo_url || null,
+        is_vaccined: currentPet.is_vaccined,
+        has_allergies: currentPet.has_allergies,
+        has_illness: currentPet.has_illness,
+        has_conditions: currentPet.has_conditions,
+        is_senior: currentPet.is_senior,
+        is_aggressive: currentPet.is_aggressive,
+        is_nervous: currentPet.is_nervous,
+        is_noisereactive: currentPet.is_noisereactive,
+        convive: currentPet.convive,
+        treats: currentPet.treats,
+        notes: currentPet.notes || null,
+        waiver_signed: false,
+        status: 'active'
+      };
+
+      const { error } = await supabase.from('pets').insert(petPayload);
+
+      if (error) throw error;
+
+      setPets([...pets, currentPet]);
+      
+      // Usar window.confirm (nativo)
+      const addAnother = window.confirm(
+        `✅ "${currentPet.name}" registrado.\n\n¿Deseas agregar otra mascota?`
+      );
+
+      if (addAnother) {
+        setCurrentPet(INITIAL_PET_DATA);
+        toast.success('Agrega la siguiente mascota');
+      } else {
+        setStep('waiver');
+      }
+    } catch (error: any) {
+      console.error('Error:', error);
+      toast.error('Error al registrar mascota: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleWaiverSubmit = async () => {
+    if (!sigCanvas.current || sigCanvas.current.isEmpty()) {
+      toast.error('Por favor firma antes de continuar');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const canvas = sigCanvas.current.getTrimmedCanvas();
+      const blob = await new Promise<Blob | null>(resolve => 
+        canvas.toBlob(resolve, 'image/png')
+      );
+
+      if (!blob) throw new Error('Error al generar imagen de firma');
+
+      // Subir firma
+      const fileName = `waiver-${clientId}-${Date.now()}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from('signatures')
+        .upload(fileName, blob, { cacheControl: '3600', upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('signatures')
+        .getPublicUrl(fileName);
+
+      const now = new Date().toISOString();
+
+      // Actualizar todas las mascotas del cliente
+      const { error: updateError } = await supabase
+        .from('pets')
+        .update({
+          waiver_signed: true,
+          waiver_date: now,
+          signature_url: publicUrl
+        })
+        .eq('client_id', clientId);
+
+      if (updateError) throw updateError;
+
+      setStep('success');
+      toast.success('Registro completado');
+    } catch (error: any) {
+      console.error('Error:', error);
+      toast.error('Error al guardar firma: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearSignature = () => {
+    sigCanvas.current?.clear();
   };
 
   if (step === 'welcome') {
@@ -129,10 +364,15 @@ export default function KioskPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl border-0 shadow-2xl">
           <CardContent className="p-12 text-center space-y-8">
+            {/* Logo de Tail Society */}
             <div className="flex justify-center">
               <div className="relative">
-                <div className="absolute inset-0 bg-blue-400 rounded-full blur-2xl opacity-20 animate-pulse" />
-                <PawPrint className="h-24 w-24 text-blue-600 relative" />
+                <div className="absolute inset-0 bg-blue-400 rounded-full blur-3xl opacity-20 animate-pulse" />
+                <img 
+                  src="/Logo500x500.png" 
+                  alt="Tail Society Logo" 
+                  className="h-40 w-40 relative drop-shadow-2xl object-contain"
+                />
               </div>
             </div>
             
@@ -141,29 +381,33 @@ export default function KioskPage() {
                 ¡Bienvenido a Tail Society!
               </h1>
               <p className="text-xl text-slate-600">
-                Comencemos tu registro en 3 sencillos pasos
+                Registro de cliente nuevo
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 max-w-md mx-auto">
+            <div className="grid grid-cols-4 gap-3 max-w-2xl mx-auto">
               <div className="p-4 bg-blue-50 rounded-xl">
                 <User className="h-6 w-6 text-blue-600 mx-auto mb-2" />
                 <p className="text-xs font-medium text-slate-700">Tus Datos</p>
               </div>
               <div className="p-4 bg-purple-50 rounded-xl">
                 <PawPrint className="h-6 w-6 text-purple-600 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-700">Tu Mascota</p>
+                <p className="text-xs font-medium text-slate-700">Mascotas</p>
+              </div>
+              <div className="p-4 bg-amber-50 rounded-xl">
+                <FileSignature className="h-6 w-6 text-amber-600 mx-auto mb-2" />
+                <p className="text-xs font-medium text-slate-700">Contrato</p>
               </div>
               <div className="p-4 bg-green-50 rounded-xl">
                 <CheckCircle2 className="h-6 w-6 text-green-600 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-700">Confirmar</p>
+                <p className="text-xs font-medium text-slate-700">Listo</p>
               </div>
             </div>
 
             <Button
               onClick={handleStartRegistration}
               size="lg"
-              className="w-full max-w-xs h-14 text-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+              className="w-full max-w-xs h-14 text-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg"
             >
               Comenzar Registro
               <Sparkles className="ml-2 h-5 w-5" />
@@ -179,11 +423,20 @@ export default function KioskPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl border-0 shadow-2xl">
           <CardHeader className="border-b bg-gradient-to-r from-blue-600 to-purple-600 text-white p-8">
-            <div className="flex items-center gap-3">
+            {/* Logo en header */}
+            <div className="flex justify-center mb-4">
+              <img 
+                src="/Logo500x500.png" 
+                alt="Tail Society" 
+                className="h-16 w-16 object-contain drop-shadow-lg"
+              />
+            </div>
+            
+            <div className="flex items-center gap-3 justify-center">
               <div className="p-3 bg-white/20 rounded-lg backdrop-blur">
                 <User className="h-6 w-6" />
               </div>
-              <div>
+              <div className="text-center">
                 <h2 className="text-2xl font-bold">Paso 1: Tus Datos</h2>
                 <p className="text-blue-100">Información de contacto</p>
               </div>
@@ -193,17 +446,17 @@ export default function KioskPage() {
           <CardContent className="p-8">
             <form onSubmit={handleClientInfoSubmit} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="fullName" className="text-base font-semibold text-slate-700">
+                <Label htmlFor="full_name" className="text-base font-semibold text-slate-700">
                   Nombre Completo *
                 </Label>
                 <Input
-                  id="fullName"
-                  value={clientData.fullName}
-                  onChange={(e) => setClientData({...clientData, fullName: e.target.value})}
+                  id="full_name"
+                  value={clientData.full_name}
+                  onChange={(e) => setClientData({...clientData, full_name: e.target.value})}
                   placeholder="Ej: María García"
                   required
                   className="h-12 text-lg"
-                  autoComplete="name"
+                  autoFocus
                 />
               </div>
 
@@ -221,14 +474,13 @@ export default function KioskPage() {
                     placeholder="81 1234 5678"
                     required
                     className="h-12 text-lg pl-11"
-                    autoComplete="tel"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-base font-semibold text-slate-700">
-                  Correo Electrónico *
+                  Correo Electrónico (Opcional)
                 </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
@@ -238,19 +490,25 @@ export default function KioskPage() {
                     value={clientData.email}
                     onChange={(e) => setClientData({...clientData, email: e.target.value})}
                     placeholder="tu@email.com"
-                    required
                     className="h-12 text-lg pl-11"
-                    autoComplete="email"
                   />
                 </div>
               </div>
 
               <Button
                 type="submit"
+                disabled={loading}
                 size="lg"
                 className="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               >
-                Continuar al Siguiente Paso
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  'Continuar'
+                )}
               </Button>
             </form>
           </CardContent>
@@ -262,23 +520,32 @@ export default function KioskPage() {
   if (step === 'pet-info') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl border-0 shadow-2xl">
-          <CardHeader className="border-b bg-gradient-to-r from-purple-600 to-pink-600 text-white p-8">
+        <Card className="w-full max-w-3xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <CardHeader className="border-b bg-gradient-to-r from-purple-600 to-pink-600 text-white p-8 sticky top-0 z-10">
+            {/* Logo en header */}
+            <div className="flex justify-center mb-4">
+              <img 
+                src="/Logo500x500.png" 
+                alt="Tail Society" 
+                className="h-16 w-16 object-contain drop-shadow-lg"
+              />
+            </div>
+            
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-3 bg-white/20 rounded-lg backdrop-blur">
                   <PawPrint className="h-6 w-6" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold">Paso 2: Tu Mascota</h2>
+                  <h2 className="text-2xl font-bold">Paso 2: Datos de Mascota</h2>
                   <p className="text-purple-100">
                     {pets.length === 0 ? 'Primera mascota' : `Mascota #${pets.length + 1}`}
                   </p>
                 </div>
               </div>
               {pets.length > 0 && (
-                <div className="text-right">
-                  <p className="text-sm text-purple-100">{pets.length} mascota(s) agregada(s)</p>
+                <div className="bg-white/20 px-4 py-2 rounded-lg backdrop-blur">
+                  <p className="text-sm font-bold">{pets.length} registrada(s)</p>
                 </div>
               )}
             </div>
@@ -286,264 +553,350 @@ export default function KioskPage() {
           
           <CardContent className="p-8">
             <form onSubmit={handlePetInfoSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="petName" className="text-base font-semibold text-slate-700">
-                    Nombre de tu Mascota *
-                  </Label>
-                  <Input
-                    id="petName"
-                    value={currentPet.name}
-                    onChange={(e) => setCurrentPet({...currentPet, name: e.target.value})}
-                    placeholder="Ej: Max"
-                    required
-                    className="h-12 text-lg"
-                  />
-                </div>
+              
+              {/* INFORMACIÓN BÁSICA */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <PawPrint size={14} /> Información General
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Nombre de la Mascota *</Label>
+                    <Input
+                      value={currentPet.name}
+                      onChange={(e) => setCurrentPet({...currentPet, name: e.target.value})}
+                      placeholder="Ej: Max"
+                      required
+                      className="h-12"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="breed" className="text-base font-semibold text-slate-700">
-                    Raza *
-                  </Label>
-                  <BreedCombobox
-                    value={currentPet.breed}
-                    onChange={(value) => setCurrentPet({...currentPet, breed: value})}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="age" className="text-base font-semibold text-slate-700">
-                    Edad (años)
-                  </Label>
-                  <Input
-                    id="age"
-                    type="number"
-                    value={currentPet.age}
-                    onChange={(e) => setCurrentPet({...currentPet, age: e.target.value})}
-                    placeholder="Ej: 3"
-                    min="0"
-                    max="30"
-                    className="h-12 text-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="weight" className="text-base font-semibold text-slate-700">
-                    Peso (kg)
-                  </Label>
-                  <Input
-                    id="weight"
-                    type="number"
-                    step="0.1"
-                    value={currentPet.weight}
-                    onChange={(e) => setCurrentPet({...currentPet, weight: e.target.value})}
-                    placeholder="Ej: 15.5"
-                    min="0"
-                    className="h-12 text-lg"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-base font-semibold text-slate-700">
-                    Sexo *
-                  </Label>
-                  <div className="flex gap-3 pt-2">
-                    <Button
-                      type="button"
-                      variant={currentPet.gender === 'male' ? 'default' : 'outline'}
-                      onClick={() => setCurrentPet({...currentPet, gender: 'male'})}
-                      className="flex-1 h-12"
+                  <div className="space-y-2">
+                    <Label>Especie</Label>
+                    <Select
+                      value={currentPet.species}
+                      onValueChange={(val) => setCurrentPet({...currentPet, species: val})}
                     >
-                      Macho
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={currentPet.gender === 'female' ? 'default' : 'outline'}
-                      onClick={() => setCurrentPet({...currentPet, gender: 'female'})}
-                      className="flex-1 h-12"
+                      <SelectTrigger className="h-12">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Perro">Perro</SelectItem>
+                        <SelectItem value="Gato">Gato</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Raza</Label>
+                    <BreedCombobox
+                      value={currentPet.breed}
+                      onChange={(value) => setCurrentPet({...currentPet, breed: value})}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Color</Label>
+                    <Input
+                      value={currentPet.color}
+                      onChange={(e) => setCurrentPet({...currentPet, color: e.target.value})}
+                      placeholder="Ej: Café"
+                      className="h-12"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Tamaño</Label>
+                    <Select
+                      value={currentPet.size}
+                      onValueChange={(val) => setCurrentPet({...currentPet, size: val})}
                     >
-                      Hembra
-                    </Button>
+                      <SelectTrigger className="h-12">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Chico">Chico</SelectItem>
+                        <SelectItem value="Mediano">Mediano</SelectItem>
+                        <SelectItem value="Grande">Grande</SelectItem>
+                        <SelectItem value="Gigante">Gigante</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Fecha de Nacimiento (Aprox)</Label>
+                    <BirthDatePicker
+                      value={currentPet.birth_date}
+                      onChange={(date) => setCurrentPet({...currentPet, birth_date: date})}
+                    />
                   </div>
                 </div>
               </div>
 
+              {/* VACUNACIÓN */}
+              <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <Syringe className={currentPet.is_vaccined ? "text-green-500" : "text-slate-400"} size={24} />
+                    <div>
+                      <Label className="font-bold text-lg text-slate-800">¿Vacunación Vigente?</Label>
+                      <p className="text-sm text-slate-500">¿Cuenta con esquema completo al día?</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={currentPet.is_vaccined}
+                    onCheckedChange={(val) => setCurrentPet({...currentPet, is_vaccined: val})}
+                    className="scale-125"
+                  />
+                </div>
+                
+                {!currentPet.is_vaccined && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm mt-3">
+                    <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Advertencia:</strong> La mascota debe cumplir con su esquema de vacunación para recibir servicio.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CUESTIONARIO DE SALUD Y COMPORTAMIENTO */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle size={14} /> Cuestionario de Comportamiento y Salud
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <SwitchField
+                    label="¿Tiene Alergias?"
+                    checked={currentPet.has_allergies}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, has_allergies: val})}
+                  />
+                  
+                  <SwitchField
+                    label="¿Tiene Enfermedades?"
+                    checked={currentPet.has_illness}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, has_illness: val})}
+                  />
+
+                  <SwitchField
+                    label="¿Condiciones Especiales?"
+                    checked={currentPet.has_conditions}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, has_conditions: val})}
+                  />
+
+                  <SwitchField
+                    label="¿Es Senior? (+7 años)"
+                    checked={currentPet.is_senior}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, is_senior: val})}
+                    colorClass="bg-purple-50 border-purple-200"
+                  />
+
+                  <SwitchField
+                    label="¿Es Agresivo?"
+                    icon={<Skull size={16} className="text-red-500" />}
+                    checked={currentPet.is_aggressive}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, is_aggressive: val})}
+                  />
+
+                  <SwitchField
+                    label="¿Es Nervioso?"
+                    icon={<HeartPulse size={16} className="text-orange-500" />}
+                    checked={currentPet.is_nervous}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, is_nervous: val})}
+                  />
+
+                  <SwitchField
+                    label="¿Sensible a Ruidos?"
+                    icon={<Volume2 size={16} className="text-purple-500" />}
+                    checked={currentPet.is_noisereactive}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, is_noisereactive: val})}
+                  />
+
+                  <SwitchField
+                    label="¿Convive con otros?"
+                    icon={<UsersIcon size={16} className="text-green-500" />}
+                    checked={currentPet.convive}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, convive: val})}
+                  />
+
+                  <SwitchField
+                    label="¿Acepta Premios/Treats?"
+                    icon={<Bone size={16} className="text-amber-600" />}
+                    checked={currentPet.treats}
+                    onChange={(val: boolean) => setCurrentPet({...currentPet, treats: val})}
+                    className="md:col-span-2"
+                  />
+                </div>
+              </div>
+
+              {/* NOTAS */}
               <div className="space-y-2">
-                <Label htmlFor="notes" className="text-base font-semibold text-slate-700">
-                  Notas Especiales (Opcional)
-                </Label>
+                <Label>Notas Adicionales (Opcional)</Label>
                 <Textarea
-                  id="notes"
                   value={currentPet.notes}
                   onChange={(e) => setCurrentPet({...currentPet, notes: e.target.value})}
-                  placeholder="Alergias, temperamento, cuidados especiales..."
-                  className="min-h-[100px] text-base"
+                  placeholder="Alergias específicas, medicamentos, comportamientos especiales..."
+                  className="min-h-[100px]"
                 />
               </div>
 
               <Button
                 type="submit"
+                disabled={loading}
                 size="lg"
                 className="w-full h-14 text-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
               >
-                <Plus className="mr-2 h-5 w-5" />
-                Agregar esta Mascota
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-5 w-5" />
+                    Guardar Mascota
+                  </>
+                )}
               </Button>
             </form>
           </CardContent>
         </Card>
-
-        {/* Dialog Mejorado */}
-        <Dialog open={showAddAnotherDialog} onOpenChange={setShowAddAnotherDialog}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-xl">
-                <CheckCircle2 className="h-6 w-6 text-green-600" />
-                ¡Mascota Agregada!
-              </DialogTitle>
-              <DialogDescription className="text-base pt-2">
-                {currentPet.name} ha sido registrado exitosamente.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-3 pt-4">
-              <Button
-                onClick={handleAddAnotherPet}
-                className="w-full h-12 text-base bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-              >
-                <Plus className="mr-2 h-5 w-5" />
-                Sí, agregar otra mascota
-              </Button>
-              
-              <Button
-                onClick={handleFinishAddingPets}
-                variant="outline"
-                className="w-full h-12 text-base border-2"
-              >
-                No, continuar con {pets.length} mascota(s)
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     );
   }
 
-  if (step === 'review') {
+  if (step === 'waiver') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-3xl border-0 shadow-2xl">
-          <CardHeader className="border-b bg-gradient-to-r from-green-600 to-emerald-600 text-white p-8">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-white/20 rounded-lg backdrop-blur">
-                <CheckCircle2 className="h-6 w-6" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold">Paso 3: Confirma tu Información</h2>
-                <p className="text-green-100">Revisa que todo esté correcto</p>
-              </div>
+      <div className="min-h-screen bg-slate-100 py-8 px-4 flex justify-center items-start">
+        <Card className="w-full max-w-lg shadow-2xl border-slate-200 overflow-hidden">
+          <CardHeader className="text-center border-b bg-white pb-6 pt-8">
+            {/* Logo */}
+            <div className="flex justify-center mb-4">
+              <img 
+                src="/Logo500x500.png" 
+                alt="Tail Society" 
+                className="h-20 w-20 object-contain"
+              />
             </div>
+            
+            <div className="mx-auto bg-slate-100 w-14 h-14 rounded-full flex items-center justify-center mb-3">
+              <FileSignature className="text-slate-600" size={24}/>
+            </div>
+            <h2 className="text-2xl font-bold text-slate-800 uppercase">Acuerdo de Servicio</h2>
+            <p className="text-slate-500 text-sm">Tail Society • Grooming & Care</p>
           </CardHeader>
           
-          <CardContent className="p-8 space-y-8">
-            {/* Información del Cliente */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <User className="h-5 w-5 text-blue-600" />
-                Tus Datos
-              </h3>
-              <div className="bg-blue-50 rounded-lg p-6 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-slate-600">Nombre</p>
-                    <p className="font-semibold text-slate-900">{clientData.fullName}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Teléfono</p>
-                    <p className="font-semibold text-slate-900">{clientData.phone}</p>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-600">Correo</p>
-                  <p className="font-semibold text-slate-900">{clientData.email}</p>
+          <CardContent className="space-y-6 pt-6 bg-slate-50/50">
+            
+            {/* DATOS DEL CLIENTE Y MASCOTAS */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-2">
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <User size={16} className="text-slate-400"/>
+                <span className="font-semibold uppercase">{clientData.full_name}</span>
+              </div>
+              <div className="flex items-start gap-2 text-sm text-slate-700">
+                <PawPrint size={16} className="text-slate-400 mt-0.5"/>
+                <div className="flex flex-col">
+                  <span className="text-xs text-slate-400 uppercase tracking-wider">Mascotas cubiertas:</span>
+                  <span className="text-slate-800 font-medium">
+                    {pets.map(p => p.name).join(', ')}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Información de Mascotas */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <PawPrint className="h-5 w-5 text-purple-600" />
-                Tus Mascotas ({pets.length})
-              </h3>
+            {/* TEXTO LEGAL RESUMIDO */}
+            <div className="bg-white p-5 rounded-xl border border-slate-200 h-80 overflow-y-auto text-xs text-slate-700 leading-relaxed">
               <div className="space-y-3">
-                {pets.map((pet, index) => (
-                  <div key={index} className="bg-purple-50 rounded-lg p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h4 className="text-xl font-bold text-slate-900">{pet.name}</h4>
-                        <p className="text-slate-600">{pet.breed}</p>
-                      </div>
-                      <Badge className="bg-purple-200 text-purple-900">
-                        Mascota #{index + 1}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-slate-600">Edad</p>
-                        <p className="font-semibold">{pet.age || 'No especificada'} años</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-600">Peso</p>
-                        <p className="font-semibold">{pet.weight || 'No especificado'} kg</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-600">Sexo</p>
-                        <p className="font-semibold capitalize">{pet.gender === 'male' ? 'Macho' : 'Hembra'}</p>
-                      </div>
-                    </div>
-                    {pet.notes && (
-                      <div className="mt-4 pt-4 border-t border-purple-200">
-                        <p className="text-sm text-slate-600">Notas</p>
-                        <p className="text-sm text-slate-900">{pet.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                <div>
+                  <strong className="text-slate-900 block mb-1">1. Naturaleza del Servicio</strong>
+                  <p>La estética canina involucra trabajo con seres vivos que pueden tener movimientos impredecibles. A pesar de nuestros protocolos de seguridad, existen riesgos inherentes al usar herramientas punzocortantes.</p>
+                </div>
+
+                <div>
+                  <strong className="text-slate-900 block mb-1">2. Política de Cero Sedantes</strong>
+                  <p>Tail Society NO utiliza ni administra tranquilizantes bajo ninguna circunstancia. Si la mascota llega sedada, el servicio será denegado.</p>
+                </div>
+
+                <div>
+                  <strong className="text-slate-900 block mb-1">3. Suspensión del Servicio</strong>
+                  <p>Nos reservamos el derecho de suspender el servicio ante signos de estrés severo o agresividad incontrolable.</p>
+                </div>
+
+                <div>
+                  <strong className="text-slate-900 block mb-1">4. Condiciones del Pelaje</strong>
+                  <p>Si el pelaje presenta nudos pegados a la piel, se procederá obligatoriamente al rapado sanitario. No somos responsables por irritaciones descubiertas al remover nudos.</p>
+                </div>
+
+                <div className="bg-red-50 p-3 rounded border border-red-100">
+                  <strong className="text-red-900">5. Ectoparásitos</strong>
+                  <p className="text-red-800">Si se detectan pulgas/garrapatas no declaradas, se suspenderá el servicio y se aplicará cargo de $500 MXN por fumigación.</p>
+                </div>
+
+                <div className="pt-3 border-t">
+                  <p className="font-bold text-slate-900 text-center">
+                    Al firmar, acepto las condiciones estipuladas y declaro que la información proporcionada es verídica.
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <Button
-                onClick={() => setStep('client-info')}
-                variant="outline"
-                size="lg"
-                className="flex-1 h-14 text-base"
-              >
-                Editar Información
-              </Button>
+            {/* ÁREA DE FIRMA */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-end">
+                <Label className="text-sm font-bold uppercase text-slate-900">Tu Firma</Label>
+                <Button
+                  type="button"
+                  onClick={clearSignature}
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-red-500 hover:bg-red-50"
+                >
+                  Borrar
+                </Button>
+              </div>
               
-              <Button
-                onClick={handleFinalSubmit}
-                disabled={loading}
-                size="lg"
-                className="flex-1 h-14 text-base bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-              >
-                {loading ? (
-                  <>
-                    <div className="mr-2 h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Registrando...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="mr-2 h-5 w-5" />
-                    Confirmar Registro
-                  </>
-                )}
-              </Button>
+              <div className="border-2 border-dashed border-slate-300 rounded-xl bg-white overflow-hidden shadow-sm">
+                <SignatureCanvas
+                  ref={sigCanvas}
+                  penColor="black"
+                  backgroundColor="white"
+                  canvasProps={{
+                    className: 'w-full h-48 block',
+                    style: { width: '100%', height: '192px' }
+                  }}
+                />
+              </div>
+              
+              <p className="text-xs text-center text-slate-400 pt-1">
+                Dibuja tu firma con el dedo o mouse
+              </p>
             </div>
+
+            <Button
+              onClick={handleWaiverSubmit}
+              disabled={loading}
+              size="lg"
+              className="w-full h-14 text-lg bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <FileSignature className="mr-2 h-5 w-5" />
+                  Aceptar y Firmar
+                </>
+              )}
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -555,6 +908,15 @@ export default function KioskPage() {
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl border-0 shadow-2xl">
           <CardContent className="p-12 text-center space-y-8">
+            {/* Logo arriba */}
+            <div className="flex justify-center mb-4">
+              <img 
+                src="/Logo500x500.png" 
+                alt="Tail Society" 
+                className="h-24 w-24 object-contain opacity-90"
+              />
+            </div>
+
             <div className="flex justify-center">
               <div className="relative">
                 <div className="absolute inset-0 bg-green-400 rounded-full blur-3xl opacity-30 animate-pulse" />
@@ -566,7 +928,7 @@ export default function KioskPage() {
             
             <div className="space-y-3">
               <h1 className="text-4xl font-bold text-slate-900">
-                ¡Registro Exitoso!
+                ¡Registro Completado!
               </h1>
               <p className="text-xl text-slate-600">
                 Bienvenido a la familia Tail Society
@@ -575,30 +937,51 @@ export default function KioskPage() {
 
             <div className="bg-green-50 rounded-xl p-6 space-y-3">
               <p className="text-lg font-semibold text-slate-900">
-                Próximos Pasos:
+                Resumen de tu registro:
               </p>
-              <ul className="text-left space-y-2 max-w-md mx-auto">
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                  <span className="text-slate-700">Recibirás un email de confirmación</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                  <span className="text-slate-700">Nuestro equipo se pondrá en contacto contigo</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-                  <span className="text-slate-700">Podrás agendar tu primera cita</span>
-                </li>
+              <div className="space-y-2 text-left max-w-md mx-auto">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                  <span className="text-slate-700">
+                    <strong>{clientData.full_name}</strong> registrado
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                  <span className="text-slate-700">
+                    <strong>{pets.length}</strong> {pets.length === 1 ? 'mascota registrada' : 'mascotas registradas'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                  <span className="text-slate-700">Contrato firmado digitalmente</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <h3 className="font-semibold text-blue-900 mb-2">Próximos Pasos:</h3>
+              <ul className="text-sm text-blue-800 space-y-1 text-left max-w-md mx-auto">
+                <li>• Recibirás confirmación por mensaje</li>
+                <li>• Nuestro equipo te contactará para agendar tu primera cita</li>
+                <li>• Puedes llamar al establecimiento para programar tu servicio</li>
               </ul>
             </div>
 
             <Button
-              onClick={() => window.location.href = '/'}
+              onClick={() => {
+                // Resetear todo el estado
+                setStep('welcome');
+                setClientData({ full_name: '', phone: '', email: '' });
+                setPets([]);
+                setCurrentPet(INITIAL_PET_DATA);
+                setClientId(null);
+                toast.success('¡Listo para registrar otro cliente!');
+              }}
               size="lg"
               className="w-full max-w-xs h-14 text-lg bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
             >
-              Finalizar
+              Registrar Otro Cliente
             </Button>
           </CardContent>
         </Card>
@@ -609,10 +992,37 @@ export default function KioskPage() {
   return null;
 }
 
-function Badge({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+// Componente auxiliar para switches
+interface SwitchFieldProps {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  icon?: React.ReactNode;
+  colorClass?: string;
+  className?: string;
+}
+
+function SwitchField({ 
+  label, 
+  checked, 
+  onChange, 
+  icon, 
+  colorClass = "bg-slate-50 border-slate-200",
+  className = ""
+}: SwitchFieldProps) {
   return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${className}`}>
-      {children}
-    </span>
+    <div className={`flex items-center justify-between p-3 rounded-lg border transition-all hover:border-slate-300 ${colorClass} ${className}`}>
+      <div className="flex items-center gap-2">
+        {icon}
+        <Label className="text-sm font-medium cursor-pointer" onClick={() => onChange(!checked)}>
+          {label}
+        </Label>
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onChange}
+        className="scale-90"
+      />
+    </div>
   );
 }

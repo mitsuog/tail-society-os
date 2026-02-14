@@ -1,78 +1,51 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Check, ChevronsUpDown, Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-
-const COMMON_BREEDS = [
-  'Labrador Retriever',
-  'Golden Retriever',
-  'Bulldog Francés',
-  'Chihuahua',
-  'Poodle',
-  'Pastor Alemán',
-  'Beagle',
-  'Yorkshire Terrier',
-  'Dachshund',
-  'Boxer',
-  'Schnauzer',
-  'Pug',
-  'Shih Tzu',
-  'Maltés',
-  'Cocker Spaniel',
-  'Border Collie',
-  'Husky Siberiano',
-  'Rottweiler',
-  'Doberman',
-  'Pomerania',
-  'Mestizo',
-  'Criollo'
-].sort();
+import { cn } from "@/lib/utils";
 
 interface BreedComboboxProps {
   value: string;
   onChange: (value: string) => void;
 }
 
+// Lista de razas comunes (misma que en AddClientDialog)
+const COMMON_BREEDS = [
+  "Mestizo", "Labrador", "Golden Retriever", "Pastor Alemán", "Bulldog Francés", 
+  "Bulldog Inglés", "Poodle", "Beagle", "Chihuahua", "Pug", "Husky", 
+  "Boxer", "Salchicha", "Yorkshire", "Shih Tzu", "Schnauzer", 
+  "Pomerania", "Doberman", "Gran Danés", "Rottweiler", "Cocker Spaniel", "Border Collie", 
+  "Maltés", "Jack Russell", "Shiba Inu", "Boston Terrier", 
+  "Bernés", "Pastor Australiano", "San Bernardo", "Samoyedo", "Akita", 
+  "Chow Chow", "Dálmata", "Gato Doméstico", "Persa", "Siamés", "Maine Coon", "Bengala"
+].sort();
+
 export function BreedCombobox({ value, onChange }: BreedComboboxProps) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [breeds, setBreeds] = useState<string[]>(COMMON_BREEDS);
 
-  const handleSelect = (selectedValue: string) => {
-    onChange(selectedValue);
-    setOpen(false);
-    setSearch('');
-  };
+  const filteredBreeds = breeds.filter(breed =>
+    breed.toLowerCase().includes(search.toLowerCase())
+  );
 
   const handleCreateNew = () => {
-    if (search.trim() && !breeds.includes(search.trim())) {
-      const newBreed = search.trim();
-      setBreeds([...breeds, newBreed].sort());
-      onChange(newBreed);
-      setOpen(false);
-      setSearch('');
+    if (!search.trim()) return;
+    
+    const newBreed = search.charAt(0).toUpperCase() + search.slice(1).toLowerCase();
+    
+    if (!breeds.includes(newBreed)) {
+      const updatedBreeds = [...breeds, newBreed].sort();
+      setBreeds(updatedBreeds);
     }
+    
+    onChange(newBreed);
+    setOpen(false);
+    setSearch("");
   };
-
-  const filteredBreeds = search
-    ? breeds.filter(breed => breed.toLowerCase().includes(search.toLowerCase()))
-    : breeds;
-
-  const showCreateOption = search.trim() && !breeds.some(b => b.toLowerCase() === search.toLowerCase());
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -81,54 +54,61 @@ export function BreedCombobox({ value, onChange }: BreedComboboxProps) {
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full h-12 justify-between text-lg"
+          className="w-full justify-between h-12 font-normal text-slate-900 border-slate-200"
         >
-          <span className={cn(!value && "text-slate-400")}>
-            {value || "Selecciona o escribe una raza"}
-          </span>
+          {value || "Seleccionar o escribir..."}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-full p-0" align="start">
         <Command>
           <CommandInput 
-            placeholder="Buscar o escribir raza..." 
+            placeholder="Buscar raza..." 
             value={search}
             onValueChange={setSearch}
           />
-          <CommandEmpty>
-            {showCreateOption ? (
-              <Button
-                variant="ghost"
-                className="w-full justify-start text-left font-normal"
-                onClick={handleCreateNew}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Crear "{search}"
-              </Button>
-            ) : (
-              <div className="py-6 text-center text-sm text-slate-500">
-                No se encontró la raza. Escribe para crear una nueva.
-              </div>
-            )}
-          </CommandEmpty>
-          <CommandGroup className="max-h-64 overflow-auto">
-            {filteredBreeds.map((breed) => (
-              <CommandItem
-                key={breed}
-                value={breed}
-                onSelect={() => handleSelect(breed)}
-              >
-                <Check
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    value === breed ? "opacity-100" : "opacity-0"
-                  )}
-                />
-                {breed}
-              </CommandItem>
-            ))}
-          </CommandGroup>
+          <CommandList className="max-h-64 overflow-y-auto">
+            <CommandEmpty>
+              {search ? (
+                <div className="p-2">
+                  <Button
+                    onClick={handleCreateNew}
+                    variant="ghost"
+                    className="w-full justify-start text-sm"
+                  >
+                    <Plus size={14} className="mr-2" />
+                    Crear "{search}"
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 p-2">No se encontraron razas</p>
+              )}
+            </CommandEmpty>
+            <CommandGroup>
+              {filteredBreeds.map((breed) => (
+                <CommandItem
+                  key={breed}
+                  value={breed}
+                  onSelect={(currentValue) => {
+                    const originalValue = breeds.find(
+                      b => b.toLowerCase() === currentValue.toLowerCase()
+                    ) || currentValue;
+                    onChange(originalValue);
+                    setOpen(false);
+                    setSearch("");
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === breed ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  {breed}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
         </Command>
       </PopoverContent>
     </Popover>
