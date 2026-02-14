@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 import { createClient as createServerClient } from "@/utils/supabase/server";
 import { revalidatePath } from 'next/cache';
 
-// Cliente ADMIN con superpoderes (Solo usar en servidor)
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -16,19 +15,19 @@ const supabaseAdmin = createClient(
   }
 );
 
-// Define a discriminated union type for responses
+// Definimos el tipo de respuesta estricto
 type ActionResponse = 
   | { success: true; userId?: string } 
   | { success: false; error: string };
 
-// --- 1. VALIDACIÓN DE ADMIN ---
+// --- 1. VALIDACIONES ---
+
 async function checkAdminPermissions() {
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   
-  if (!user) throw new Error("No autenticado");
+  if (!user) throw new Error("Sesión expirada o no autenticado.");
 
-  // Verificar rol en base de datos
   const { data: roles } = await supabase
     .from('user_roles')
     .select('role')
@@ -36,33 +35,40 @@ async function checkAdminPermissions() {
     .single();
 
   if (!roles || roles.role !== 'admin') {
-    throw new Error("No tienes permisos de Administrador");
+    throw new Error("Acceso denegado: Se requieren permisos de Administrador.");
   }
-  return true;
 }
 
-// --- 2. VALIDACIÓN DE MODO DEMO (NUEVO) ---
 function checkDemoRestriction() {
+  // Verificamos explícitamente el string 'true'
   if (process.env.NEXT_PUBLIC_IS_DEMO === 'true') {
-    throw new Error("🔒 Acción bloqueada: No se permiten cambios de seguridad en el DEMO público.");
+    throw new Error("🔒 MODO DEMO: Esta acción está restringida por seguridad.");
   }
 }
 
-// --- HELPER WRAPPER ---
-// Wraps logic to catch errors and return consistent ActionResponse
+// --- 2. WRAPPER SEGURO ---
+// Este wrapper asegura que NUNCA se lance un error 500 al cliente, sino un 200 con success: false
 async function safeAction(action: () => Promise<ActionResponse>): Promise<ActionResponse> {
     try {
-        await checkAdminPermissions();
+        // 1. Validar Demo primero (la más rápida)
         checkDemoRestriction();
+        
+        // 2. Validar Permisos
+        await checkAdminPermissions();
+        
+        // 3. Ejecutar acción real
         return await action();
     } catch (error: any) {
-        return { success: false, error: error.message };
+        console.error("Admin Action Error:", error.message); // Log en servidor para debug
+        return { 
+            success: false, 
+            error: error.message || "Ocurrió un error inesperado en el servidor." 
+        };
     }
 }
 
-// --- ACCIONES ---
+// --- 3. ACCIONES EXPORTADAS ---
 
-// 1. CREAR NUEVO USUARIO DE SISTEMA
 export async function adminCreateUser(formData: FormData): Promise<ActionResponse> {
   return safeAction(async () => {
       const email = formData.get('email') as string;
@@ -70,7 +76,6 @@ export async function adminCreateUser(formData: FormData): Promise<ActionRespons
       const fullName = formData.get('fullName') as string;
       const role = formData.get('role') as string;
 
-      // Crear usuario en Auth
       const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
@@ -79,9 +84,8 @@ export async function adminCreateUser(formData: FormData): Promise<ActionRespons
       });
 
       if (authError) throw new Error(authError.message);
-      if (!authUser.user) throw new Error("No se pudo crear el usuario");
+      if (!authUser.user) throw new Error("No se pudo crear el usuario en Auth.");
 
-      // Insertar rol
       const { error: roleError } = await supabaseAdmin
         .from('user_roles')
         .insert({
@@ -92,7 +96,7 @@ export async function adminCreateUser(formData: FormData): Promise<ActionRespons
 
       if (roleError) {
         await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
-        throw new Error("Error asignando rol: " + roleError.message);
+        throw new Error("Error al asignar rol: " + roleError.message);
       }
 
       revalidatePath('/admin/users');
@@ -100,7 +104,6 @@ export async function adminCreateUser(formData: FormData): Promise<ActionRespons
   });
 }
 
-// 2. CAMBIAR CONTRASEÑA (RESET PASSWORD)
 export async function adminResetPassword(userId: string, newPassword: string): Promise<ActionResponse> {
   return safeAction(async () => {
       const { error } = await supabaseAdmin.auth.admin.updateUserById(
@@ -108,19 +111,18 @@ export async function adminResetPassword(userId: string, newPassword: string): P
         { password: newPassword }
       );
 
-      if (error) throw new Error("Error al cambiar contraseña: " + error.message);
+      if (error) throw new Error(error.message);
 
       revalidatePath('/admin/users');
       return { success: true };
   });
 }
 
-// 3. ELIMINAR USUARIO
 export async function adminDeleteUser(userId: string): Promise<ActionResponse> {
   return safeAction(async () => {
       const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
-      if (error) throw new Error("Error eliminando usuario: " + error.message);
+      if (error) throw new Error(error.message);
 
       revalidatePath('/admin/users');
       return { success: true };
