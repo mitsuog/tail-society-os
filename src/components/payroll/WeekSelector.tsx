@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from "@/lib/utils";
 
 interface WeekSelectorProps {
@@ -16,15 +16,27 @@ interface WeekSelectorProps {
 
 export function WeekSelector({ selectedWeek, onWeekChange, disabled }: WeekSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
+    // Estado para controlar qué mes estamos viendo en el calendario
     const [viewDate, setViewDate] = useState(selectedWeek.from);
 
-    const handlePrevWeek = () => {
+    // [CORRECCIÓN CLAVE] 
+    // Si la semana seleccionada cambia externamente (ej. con las flechas de afuera),
+    // actualizamos la vista del calendario para que muestre el mes correcto.
+    useEffect(() => {
+        if (isOpen) {
+            setViewDate(selectedWeek.from);
+        }
+    }, [isOpen, selectedWeek.from]);
+
+    const handlePrevWeek = (e: React.MouseEvent) => {
+        e.stopPropagation();
         const newFrom = subWeeks(selectedWeek.from, 1);
         const newTo = subWeeks(selectedWeek.to, 1);
         onWeekChange({ from: newFrom, to: newTo });
     };
 
-    const handleNextWeek = () => {
+    const handleNextWeek = (e: React.MouseEvent) => {
+        e.stopPropagation();
         const newFrom = addWeeks(selectedWeek.from, 1);
         const newTo = addWeeks(selectedWeek.to, 1);
         onWeekChange({ from: newFrom, to: newTo });
@@ -35,70 +47,63 @@ export function WeekSelector({ selectedWeek, onWeekChange, disabled }: WeekSelec
         const from = startOfWeek(now, { weekStartsOn: 1 });
         const to = endOfWeek(now, { weekStartsOn: 1 });
         onWeekChange({ from, to });
+        setViewDate(now);
         setIsOpen(false);
     };
 
-    // Generar semanas para el mini calendario
-    const generateWeeks = () => {
+    // Generador de días más robusto usando date-fns
+    const generateMonthDays = () => {
+        const monthStart = startOfMonth(viewDate);
+        const monthEnd = endOfMonth(monthStart);
+        const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
+        const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
+
+        const days = eachDayOfInterval({ start: startDate, end: endDate });
+        
+        // Agrupar en semanas
         const weeks: Date[][] = [];
-        const monthStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
-        const monthEnd = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
-        
-        let currentWeekStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-        
-        while (currentWeekStart <= monthEnd) {
-            const weekDays: Date[] = [];
-            for (let i = 0; i < 7; i++) {
-                const day = new Date(currentWeekStart);
-                day.setDate(day.getDate() + i);
-                weekDays.push(day);
+        let currentWeek: Date[] = [];
+
+        days.forEach((day) => {
+            currentWeek.push(day);
+            if (currentWeek.length === 7) {
+                weeks.push(currentWeek);
+                currentWeek = [];
             }
-            weeks.push(weekDays);
-            currentWeekStart = addWeeks(currentWeekStart, 1);
-        }
-        
+        });
         return weeks;
     };
 
-    const isWeekSelected = (weekStart: Date) => {
-        return weekStart.getTime() === selectedWeek.from.getTime();
-    };
-
-    const isCurrentMonth = (date: Date) => {
-        return date.getMonth() === viewDate.getMonth();
-    };
-
-    const weeks = generateWeeks();
+    const isWeekSelected = (weekStart: Date) => isSameDay(weekStart, selectedWeek.from);
+    const weeks = generateMonthDays();
 
     return (
         <div className="relative">
-            {/* Selector compacto */}
-            <div className="flex items-center gap-2">
+            {/* --- CONTROLES VISIBLES --- */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md shadow-sm p-0.5">
                 <Button
                     variant="ghost"
                     size="icon"
                     onClick={handlePrevWeek}
                     disabled={disabled}
-                    className="h-9 w-9 hover:bg-slate-100"
+                    className="h-8 w-8 hover:bg-slate-100 text-slate-500 rounded-sm"
                 >
                     <ChevronLeft className="h-4 w-4" />
                 </Button>
 
                 <button
-                    onClick={() => setIsOpen(!isOpen)}
+                    onClick={() => !disabled && setIsOpen(!isOpen)}
                     disabled={disabled}
                     className={cn(
-                        "flex items-center gap-2 px-4 py-2 rounded-lg border bg-white",
-                        "hover:bg-slate-50 transition-colors min-w-[280px] justify-center",
-                        "border-slate-200 shadow-sm",
+                        "flex items-center justify-center gap-2 px-3 h-8",
+                        "hover:bg-slate-50 transition-colors min-w-[200px]",
+                        "text-sm font-medium text-slate-700",
                         disabled && "opacity-50 cursor-not-allowed"
                     )}
                 >
-                    <Calendar className="h-4 w-4 text-slate-500" />
-                    <span className="font-medium text-slate-900">
-                        {format(selectedWeek.from, "dd MMM", { locale: es })}
-                        {' - '}
-                        {format(selectedWeek.to, "dd MMM yyyy", { locale: es })}
+                    <CalendarIcon className="h-4 w-4 text-slate-400" />
+                    <span className="capitalize">
+                        {format(selectedWeek.from, "d MMM", { locale: es })} - {format(selectedWeek.to, "d MMM yyyy", { locale: es })}
                     </span>
                 </button>
 
@@ -107,107 +112,100 @@ export function WeekSelector({ selectedWeek, onWeekChange, disabled }: WeekSelec
                     size="icon"
                     onClick={handleNextWeek}
                     disabled={disabled}
-                    className="h-9 w-9 hover:bg-slate-100"
+                    className="h-8 w-8 hover:bg-slate-100 text-slate-500 rounded-sm"
                 >
                     <ChevronRight className="h-4 w-4" />
                 </Button>
             </div>
 
-            {/* Mini calendario desplegable */}
+            {/* --- CALENDARIO FLOTANTE --- */}
             {isOpen && (
                 <>
-                    {/* Overlay */}
-                    <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setIsOpen(false)}
-                    />
+                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
                     
-                    {/* Calendario */}
-                    <Card className="absolute top-full mt-2 z-50 p-4 shadow-xl border-slate-200 w-[360px] left-1/2 -translate-x-1/2">
-                        {/* Header del mes */}
+                    <Card className="absolute top-full left-0 mt-2 z-50 p-4 w-[320px] shadow-xl border-slate-200 animate-in fade-in zoom-in-95 duration-100">
+                        {/* Navegación de Mes */}
                         <div className="flex items-center justify-between mb-4">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => setViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                                className="h-8 w-8"
+                                onClick={() => setViewDate(subWeeks(viewDate, 4))}
+                                className="h-7 w-7"
                             >
                                 <ChevronLeft className="h-4 w-4" />
                             </Button>
                             
-                            <span className="font-semibold text-sm text-slate-900">
+                            <span className="text-sm font-semibold capitalize text-slate-900">
                                 {format(viewDate, "MMMM yyyy", { locale: es })}
                             </span>
                             
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => setViewDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-                                className="h-8 w-8"
+                                onClick={() => setViewDate(addWeeks(viewDate, 4))}
+                                className="h-7 w-7"
                             >
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
                         </div>
 
-                        {/* Días de la semana */}
-                        <div className="grid grid-cols-7 gap-1 mb-2">
-                            {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, i) => (
-                                <div
-                                    key={i}
-                                    className="text-center text-xs font-medium text-slate-500 py-1"
-                                >
+                        {/* Encabezado de Días */}
+                        <div className="grid grid-cols-7 mb-2 text-center">
+                            {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'].map((day) => (
+                                <div key={day} className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
                                     {day}
                                 </div>
                             ))}
                         </div>
 
-                        {/* Semanas */}
+                        {/* Grid de Semanas */}
                         <div className="space-y-1">
-                            {weeks.map((week, weekIdx) => {
-                                const weekStart = startOfWeek(week[0], { weekStartsOn: 1 });
-                                const weekEnd = endOfWeek(week[0], { weekStartsOn: 1 });
-                                const selected = isWeekSelected(weekStart);
+                            {weeks.map((week, idx) => {
+                                const weekStart = week[0];
+                                const weekEnd = week[6];
+                                const isSelected = isWeekSelected(weekStart);
 
                                 return (
-                                    <button
-                                        key={weekIdx}
+                                    <div
+                                        key={idx}
                                         onClick={() => {
                                             onWeekChange({ from: weekStart, to: weekEnd });
                                             setIsOpen(false);
                                         }}
                                         className={cn(
-                                            "grid grid-cols-7 gap-1 w-full rounded-md p-1 transition-colors",
-                                            selected ? "bg-blue-50 ring-2 ring-blue-500" : "hover:bg-slate-50"
+                                            "grid grid-cols-7 text-center py-1 cursor-pointer rounded-md transition-all group",
+                                            isSelected 
+                                                ? "bg-blue-600 shadow-md scale-[1.02]" 
+                                                : "hover:bg-slate-100"
                                         )}
                                     >
                                         {week.map((day, dayIdx) => (
                                             <div
                                                 key={dayIdx}
                                                 className={cn(
-                                                    "text-center text-sm py-1.5 rounded-md transition-colors",
-                                                    selected && "bg-blue-500 text-white font-medium",
-                                                    !selected && isCurrentMonth(day) && "text-slate-900",
-                                                    !selected && !isCurrentMonth(day) && "text-slate-300",
-                                                    !selected && "hover:bg-slate-100"
+                                                    "text-sm h-7 w-7 flex items-center justify-center mx-auto rounded-full",
+                                                    isSelected && "text-white font-semibold",
+                                                    !isSelected && !isSameMonth(day, viewDate) && "text-slate-300",
+                                                    !isSelected && isSameMonth(day, viewDate) && "text-slate-700",
+                                                    !isSelected && isSameDay(day, new Date()) && "bg-blue-50 text-blue-600 font-bold"
                                                 )}
                                             >
                                                 {format(day, 'd')}
                                             </div>
                                         ))}
-                                    </button>
+                                    </div>
                                 );
                             })}
                         </div>
 
-                        {/* Footer con botón de semana actual */}
-                        <div className="mt-4 pt-3 border-t border-slate-100">
-                            <Button
-                                variant="outline"
-                                size="sm"
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                 onClick={goToCurrentWeek}
-                                className="w-full text-xs"
                             >
-                                Ir a semana actual
+                                Ir a esta semana
                             </Button>
                         </div>
                     </Card>

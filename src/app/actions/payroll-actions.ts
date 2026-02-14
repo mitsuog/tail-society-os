@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from "@/utils/supabase/server";
-import { addDays, subDays, parseISO } from 'date-fns';
+import { addDays, subDays, parseISO, eachDayOfInterval, format, isWithinInterval, isSameDay } from 'date-fns';
 
 const safeNum = (val: any): number => {
     if (val === null || val === undefined) return 0;
@@ -29,20 +29,23 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
     .gte('timestamp', queryStart)
     .lte('timestamp', queryEnd);
 
-  let totalGrooming = 0;
-  let totalStore = 0;
+  // Mapa diario de ventas
   const dailyMap: Record<string, { grooming: number, store: number, total: number }> = {};
+  let periodTotalGrooming = 0;
+  let periodTotalStore = 0;
 
   transactions?.forEach((t: any) => {
       const localDate = getMonterreyDateString(t.timestamp);
       if (localDate >= startDate && localDate <= endDate) {
           if (!dailyMap[localDate]) dailyMap[localDate] = { grooming: 0, store: 0, total: 0 };
+          
           let tGrooming = 0;
           let tStore = 0;
+          
           if (t.items && Array.isArray(t.items) && t.items.length > 0) {
               t.items.forEach((item: any) => {
                   const amount = safeNum(item.amount);
-                  if (item.category === 'grooming') tGrooming += amount;
+                  if (item.category === 'grooming' || t.is_grooming) tGrooming += amount;
                   else tStore += amount;
               });
           } else {
@@ -50,11 +53,13 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
               if (t.is_grooming) tGrooming += total;
               else tStore += total;
           }
-          totalGrooming += tGrooming;
-          totalStore += tStore;
+          
           dailyMap[localDate].grooming += tGrooming;
           dailyMap[localDate].store += tStore;
           dailyMap[localDate].total += (tGrooming + tStore);
+
+          periodTotalGrooming += tGrooming;
+          periodTotalStore += tStore;
       }
   });
 
@@ -62,23 +67,21 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
       date, grooming: dailyMap[date].grooming, store: dailyMap[date].store, total: dailyMap[date].total
   }));
 
-  const totalRevenue = Math.round((totalGrooming + totalStore) * 100) / 100;
-  totalGrooming = Math.round(totalGrooming * 100) / 100;
+  const periodTotalRevenue = Math.round((periodTotalGrooming + periodTotalStore) * 100) / 100;
+  periodTotalGrooming = Math.round(periodTotalGrooming * 100) / 100;
 
-  // 2. POOLS
+  // 2. POOLS Y TIERS
   const { data: tiers } = await supabase.from('commission_tiers').select('*');
   
   const groomingTierFound = tiers?.find((t: any) => 
-      t.type === 'grooming' && totalGrooming >= safeNum(t.min_sales) && totalGrooming <= (t.max_sales ? safeNum(t.max_sales) : Infinity)
+      t.type === 'grooming' && periodTotalGrooming >= safeNum(t.min_sales) && periodTotalGrooming <= (t.max_sales ? safeNum(t.max_sales) : Infinity)
   );
-  const groomingTier = { name: groomingTierFound?.name || 'Sin Nivel', percentage: safeNum(groomingTierFound?.percentage) };
-  const groomingPoolTotal = totalGrooming * groomingTier.percentage;
+  const groomingPct = safeNum(groomingTierFound?.percentage); 
 
   const totalTierFound = tiers?.find((t: any) => 
-      t.type === 'total' && totalRevenue >= safeNum(t.min_sales) && totalRevenue <= (t.max_sales ? safeNum(t.max_sales) : Infinity)
+      t.type === 'total' && periodTotalRevenue >= safeNum(t.min_sales) && periodTotalRevenue <= (t.max_sales ? safeNum(t.max_sales) : Infinity)
   );
-  const totalTier = { name: totalTierFound?.name || 'Sin Nivel', percentage: safeNum(totalTierFound?.percentage) };
-  const totalPoolTotal = totalRevenue * totalTier.percentage;
+  const totalPct = safeNum(totalTierFound?.percentage); 
 
   // 3. EMPLEADOS
   const { data: employees } = await supabase.from('employees').select(`
@@ -90,121 +93,155 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
   if (!employees || employees.length === 0) {
     return {
       period: { start: startDate, end: endDate },
-      financials: { totalGrooming, totalStore, totalRevenue },
+      financials: { totalGrooming: periodTotalGrooming, totalStore: periodTotalStore, totalRevenue: periodTotalRevenue },
       dailyBreakdown,
-      tiers_applied: { grooming: groomingTier, total: totalTier },
-      pools: { grooming: groomingPoolTotal, total: totalPoolTotal, redistributed: 0 },
+      tiers_applied: { grooming: { name: groomingTierFound?.name, percentage: groomingPct }, total: { name: totalTierFound?.name, percentage: totalPct } },
+      pools: { grooming: 0, total: 0, redistributed: 0 },
       cash_flow: { total_cash_needed: 0 }, 
       details: []
     };
   }
 
-  // 4. CÁLCULO DE NÓMINA
-  let redistributionPot = 0; 
-  let beneficiariesCount = 0; 
-  let totalCashNeeded = 0;
+  // 4. CÁLCULO DE NÓMINA (LÓGICA NUEVA: DÍA A DÍA ROBUSTA)
+  
+  const empCalculations = employees.map((emp: any) => ({
+      ...emp,
+      accCommission: 0,     // Comisión ganada (estando presente)
+      accBonus: 0,          // Bono por redistribución (ganado por faltas ajenas)
+      lostCommission: 0,    // Comisión perdida por estar ausente (para mostrar en deducciones)
+      penaltySalaryDays: 0, // Días que se descontarán del sueldo (Injustificadas)
+      totalAbsentDays: 0    // Total de ausencias (Just + Injust)
+  }));
 
-  const initialCalculations = employees.map((emp: any) => {
-    // Contrato
+  const daysInterval = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
+
+  daysInterval.forEach((dayObj) => {
+      const dateStr = format(dayObj, 'yyyy-MM-dd');
+      const sales = dailyMap[dateStr] || { grooming: 0, store: 0, total: 0 };
+
+      // Bolsa de dinero disponible HOY
+      const dailyGroomingPool = sales.grooming * groomingPct;
+      const dailyTotalPool = sales.total * totalPct;
+
+      // Grupos para repartir el dinero de HOY
+      const groups: Record<string, { present: any[], absent: any[] }> = {
+          'grooming': { present: [], absent: [] },
+          'total': { present: [], absent: [] },
+          'none': { present: [], absent: [] }
+      };
+
+      // Paso 1: Clasificar asistencia
+      empCalculations.forEach((emp: any) => {
+          const absences = Array.isArray(emp.absences) ? emp.absences : [];
+          
+          // Detección robusta de ausencia
+          const absenceToday = absences.find((abs: any) => {
+              const start = parseISO(abs.start_date);
+              const end = parseISO(abs.end_date);
+              return isWithinInterval(dayObj, { start, end }) || isSameDay(dayObj, start) || isSameDay(dayObj, end);
+          });
+
+          if (absenceToday) {
+              emp.totalAbsentDays++;
+              
+              const typeRaw = (absenceToday.type || '').toLowerCase().trim();
+              const isUnjustified = 
+                  typeRaw === 'unjustified' || 
+                  typeRaw === 'absent_unjustified' || 
+                  typeRaw.includes('injust'); 
+
+              if (isUnjustified) {
+                  // Si es injustificada: SE DESCUENTA SUELDO
+                  emp.penaltySalaryDays++;
+              }
+              // Si es Justificada (sick, vacation): NO entra aquí, cobra su sueldo base normal.
+              
+              // PERO, en AMBOS casos, al no estar presente, pierde la comisión del día
+              if (groups[emp.commission_type]) groups[emp.commission_type].absent.push(emp);
+
+          } else {
+              // PRESENTE: Gana comisión y bono
+              if (groups[emp.commission_type]) groups[emp.commission_type].present.push(emp);
+          }
+      });
+
+      // Paso 2: Calcular Dinero y Redistribuir
+      ['grooming', 'total'].forEach(type => {
+          const poolValue = type === 'grooming' ? dailyGroomingPool : dailyTotalPool;
+          if (poolValue <= 0) return;
+
+          const group = groups[type];
+          let potToRedistribute = 0;
+          
+          // A. Calcular pérdidas de los ausentes
+          group.absent.forEach((emp: any) => {
+              const share = safeNum(emp.participation_pct) / 100;
+              const lostAmount = poolValue * share;
+              
+              emp.lostCommission += lostAmount; // Registramos cuánto perdió hoy para mostrarlo en recibo
+              potToRedistribute += lostAmount;  // Lo sumamos al bote común
+          });
+
+          // B. Repartir a los presentes
+          if (group.present.length > 0) {
+              const bonusPerPerson = potToRedistribute / group.present.length;
+
+              group.present.forEach((emp: any) => {
+                  const share = safeNum(emp.participation_pct) / 100;
+                  emp.accCommission += (poolValue * share); // Su parte normal
+                  emp.accBonus += bonusPerPerson;           // Su bono extra (reparto)
+              });
+          }
+      });
+  });
+
+  // 5. AGREGACIÓN FINAL
+  let totalCashNeeded = 0;
+  let totalRedistributedStats = 0;
+
+  const payrollDetails = empCalculations.map((emp: any) => {
     const contractsArray = Array.isArray(emp.contracts) ? emp.contracts : [];
     const contract = contractsArray.find((c: any) => c.is_active) || contractsArray[0] || null;
     const totalWeeklySalary = contract ? safeNum(contract.base_salary_weekly) : 0;
     const meta = contract?.metadata || {};
     
-    // Sueldos Base COMPLETOS (Semanal)
+    // Dispersión
     const bankTarget = safeNum(meta.bank_dispersion) || 0; 
     const cashTarget = safeNum(meta.cash_difference) || 0;
     const fullBankWeekly = (bankTarget === 0 && cashTarget === 0) ? totalWeeklySalary : bankTarget;
     const fullCashWeekly = cashTarget;
 
-    // Faltas
-    const empAbsences = Array.isArray(emp.absences) ? emp.absences : [];
-    const absences = empAbsences.filter((abs: any) => (
-        abs.start_date <= endDate && abs.end_date >= startDate && abs.type === 'unjustified'
-    ));
-    const unjustifiedDays = absences.length;
-    
-    // CÁLCULO DE DESCUENTO POR SUELDO BASE (DIVIDIDO ENTRE 7)
-    // Descuento Diario = (Sueldo Banco + Sueldo Efec) / 7
+    // Descuentos Sueldo (Solo Injustificadas)
     const dailyBank = fullBankWeekly / 7;
     const dailyCash = fullCashWeekly / 7;
     
-    // Descuento Total = Diario * Días Faltados
-    const salaryPenaltyBank = dailyBank * unjustifiedDays;
-    const salaryPenaltyCash = dailyCash * unjustifiedDays;
+    const salaryPenaltyBank = dailyBank * emp.penaltySalaryDays;
+    const salaryPenaltyCash = dailyCash * emp.penaltySalaryDays;
     const salaryPenaltyTotal = salaryPenaltyBank + salaryPenaltyCash;
     
-    // Sueldo Neto a Pagar (Base)
     const payoutBank = Math.max(0, fullBankWeekly - salaryPenaltyBank);
     const payoutCashBase = Math.max(0, fullCashWeekly - salaryPenaltyCash);
-    const payoutBaseTotal = payoutBank + payoutCashBase;
     
-    // CÁLCULO DE COMISIONES
-    const participation = safeNum(emp.participation_pct) / 100;
-    let theoreticalCommission = 0;
-    let poolName = "";
+    // Comisiones Finales
+    // Nota: accCommission ya es lo ganado por días trabajados.
+    // lostCommission es meramente informativo para la deducción visual.
+    const finalCommission = emp.accCommission + emp.accBonus;
+    totalRedistributedStats += emp.accBonus;
 
-    if (emp.commission_type === 'grooming') {
-        theoreticalCommission = groomingPoolTotal * participation;
-        poolName = "Grooming";
-    } else if (emp.commission_type === 'total') {
-        theoreticalCommission = totalPoolTotal * participation;
-        poolName = "Total";
-    }
-
-    // PENALIZACIÓN DE COMISIÓN (Bote Redistribuible)
-    let commissionPenalty = 0;
-    if (unjustifiedDays > 0 && theoreticalCommission > 0) {
-        const penaltyFactor = Math.min(1, unjustifiedDays / 6); 
-        commissionPenalty = theoreticalCommission * penaltyFactor;
-    }
-
-    redistributionPot += commissionPenalty;
-    const isBeneficiary = unjustifiedDays === 0;
-    if (isBeneficiary) beneficiariesCount++;
-
-    return {
-        id: emp.id,
-        first_name: emp.first_name,
-        last_name: emp.last_name,
-        role: emp.role,
-        color: emp.color,
-        commission_type: emp.commission_type,
-        participation_pct: safeNum(emp.participation_pct),
-        unjustifiedDays,
-        
-        // Datos crudos para recibo
-        fullBankWeekly,
-        fullCashWeekly,
-        salaryPenaltyTotal, // Descuento en $ del sueldo base
-        
-        payoutBaseTotal,
-        payoutBank,       
-        payoutCashBase,   
-        poolName,
-        theoreticalCommission,
-        commissionPenalty, // Descuento en $ de la comisión
-        payoutCommissionInitial: theoreticalCommission - commissionPenalty,
-        isBeneficiary
-    };
-  });
-
-  // Bono redistribuido
-  const bonusPerPerson = beneficiariesCount > 0 ? (redistributionPot / beneficiariesCount) : 0;
-
-  // Generar detalles finales
-  const payrollDetails = initialCalculations.map((emp) => {
-    const bonus = emp.isBeneficiary ? bonusPerPerson : 0;
-    const finalCommission = emp.payoutCommissionInitial + bonus;
-    
-    const totalCashPayout = emp.payoutCashBase + finalCommission;
+    const totalCashPayout = payoutCashBase + finalCommission;
+    const payoutBaseTotal = payoutBank + payoutCashBase; // Solo base
     totalCashNeeded += totalCashPayout;
 
+    // Notas
     let notes = [];
-    if (emp.unjustifiedDays > 0) notes.push(`-${emp.unjustifiedDays} falta(s)`);
-    else if (bonus > 0) notes.push(`+Bono $${Math.round(bonus)}`);
+    if (emp.penaltySalaryDays > 0) notes.push(`-${emp.penaltySalaryDays} falta(s) injust.`);
     
-    const baseNote = `${emp.participation_pct}% ${emp.poolName}`;
+    const justifCount = emp.totalAbsentDays - emp.penaltySalaryDays;
+    if (justifCount > 0) notes.push(`${justifCount} justif.`);
+    
+    if (emp.accBonus > 0) notes.push(`+Bono redist. $${Math.round(emp.accBonus)}`);
+    
+    const baseNote = `${emp.participation_pct}% ${emp.commission_type === 'total' ? 'Total' : 'Grooming'}`;
     const fullNote = notes.length > 0 ? `${baseNote} (${notes.join(', ')})` : baseNote;
 
     return {
@@ -214,43 +251,43 @@ export async function getPayrollPreview(startDate: string, endDate: string) {
         role: emp.role, 
         color: emp.color 
       },
-      days_worked: 7 - emp.unjustifiedDays,
-      lost_days: emp.unjustifiedDays,
       commission_type: emp.commission_type || 'none',
-      participation_pct: emp.participation_pct,
-      calculation_note: fullNote,
+      participation_pct: safeNum(emp.participation_pct),
+      days_worked: 7 - emp.penaltySalaryDays,
+      lost_days: emp.penaltySalaryDays,
       
-      // MONTOS COMPLETOS (Para recibo "Bruto")
-      full_salary_weekly: emp.fullBankWeekly + emp.fullCashWeekly,
-      salary_penalty: emp.salaryPenaltyTotal, // Deducción Salario Base
+      full_salary_weekly: fullBankWeekly + fullCashWeekly,
       
-      // MONTOS NETOS A PAGAR
-      payout_bank: Math.round(emp.payoutBank * 100) / 100,
-      payout_cash_salary: Math.round(emp.payoutCashBase * 100) / 100,
+      // Multas
+      salary_penalty: Math.round(salaryPenaltyTotal * 100) / 100,
+      commission_penalty: Math.round(emp.lostCommission * 100) / 100, // <--- AQUI ESTABA LA CLAVE, ahora sí mandamos el valor.
+      
+      payout_bank: Math.round(payoutBank * 100) / 100,
+      payout_cash_salary: Math.round(payoutCashBase * 100) / 100,
+      
       payout_commission: Math.round(finalCommission * 100) / 100,
       payout_cash_total: Math.round(totalCashPayout * 100) / 100,
       
-      total_payout: Math.round((emp.payoutBaseTotal + finalCommission) * 100) / 100,
+      total_payout: Math.round((payoutBaseTotal + finalCommission) * 100) / 100,
       
-      // Extras
-      commission_bonus: Math.round(bonus * 100) / 100,
-      commission_penalty: Math.round(emp.commissionPenalty * 100) / 100, // Deducción Comisión
+      commission_bonus: Math.round(emp.accBonus * 100) / 100,
+      calculation_note: fullNote,
     };
   });
 
   return {
     period: { start: startDate, end: endDate },
     financials: { 
-      totalGrooming: Math.round(totalGrooming * 100) / 100, 
-      totalStore: Math.round(totalStore * 100) / 100, 
-      totalRevenue: Math.round(totalRevenue * 100) / 100 
+      totalGrooming: Math.round(periodTotalGrooming * 100) / 100, 
+      totalStore: Math.round(periodTotalStore * 100) / 100, 
+      totalRevenue: Math.round(periodTotalRevenue * 100) / 100 
     },
     dailyBreakdown,
-    tiers_applied: { grooming: groomingTier, total: totalTier },
+    tiers_applied: { grooming: { name: groomingTierFound?.name, percentage: groomingPct }, total: { name: totalTierFound?.name, percentage: totalPct } },
     pools: { 
-      grooming: Math.round(groomingPoolTotal * 100) / 100, 
-      total: Math.round(totalPoolTotal * 100) / 100, 
-      redistributed: Math.round(redistributionPot * 100) / 100 
+      grooming: Math.round((periodTotalGrooming * groomingPct) * 100) / 100, 
+      total: Math.round((periodTotalRevenue * totalPct) * 100) / 100, 
+      redistributed: Math.round(totalRedistributedStats * 100) / 100 
     },
     cash_flow: { total_cash_needed: Math.round(totalCashNeeded * 100) / 100 }, 
     details: payrollDetails
@@ -284,7 +321,6 @@ export async function savePayrollRun(data: any) {
         metadata: { 
             bank_deposit: d.payout_bank, 
             cash_payment: d.payout_cash_total,
-            // Guardamos todo el detalle para regenerar el PDF
             breakdown: {
                 full_salary_weekly: d.full_salary_weekly,
                 salary_penalty: d.salary_penalty,
