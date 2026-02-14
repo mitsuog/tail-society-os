@@ -16,7 +16,7 @@ const supabaseAdmin = createClient(
   }
 );
 
-// Verificar que quien llama es realmente Admin
+// --- 1. VALIDACIÓN DE ADMIN ---
 async function checkAdminPermissions() {
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -36,27 +36,38 @@ async function checkAdminPermissions() {
   return true;
 }
 
+// --- 2. VALIDACIÓN DE MODO DEMO (NUEVO) ---
+function checkDemoRestriction() {
+  // Aquí es donde el código "aprende" a revisar la variable
+  if (process.env.NEXT_PUBLIC_IS_DEMO === 'true') {
+    throw new Error("🔒 Acción bloqueada: No se permiten cambios de seguridad en el DEMO público.");
+  }
+}
+
+// --- ACCIONES ---
+
 // 1. CREAR NUEVO USUARIO DE SISTEMA
 export async function adminCreateUser(formData: FormData) {
   await checkAdminPermissions();
+  checkDemoRestriction(); // <--- BLOQUEO AQUÍ
 
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const fullName = formData.get('fullName') as string;
-  const role = formData.get('role') as string; // 'admin', 'receptionist', 'employee'
+  const role = formData.get('role') as string;
 
-  // Crear usuario en Auth (Supabase Auth)
+  // Crear usuario en Auth
   const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
-    email_confirm: true, // Auto-confirmar email
+    email_confirm: true,
     user_metadata: { full_name: fullName }
   });
 
   if (authError) throw new Error(authError.message);
   if (!authUser.user) throw new Error("No se pudo crear el usuario");
 
-  // Insertar rol en user_roles
+  // Insertar rol
   const { error: roleError } = await supabaseAdmin
     .from('user_roles')
     .insert({
@@ -66,7 +77,6 @@ export async function adminCreateUser(formData: FormData) {
     });
 
   if (roleError) {
-    // Si falla el rol, borramos el usuario de Auth para no dejar basura
     await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
     throw new Error("Error asignando rol: " + roleError.message);
   }
@@ -78,6 +88,7 @@ export async function adminCreateUser(formData: FormData) {
 // 2. CAMBIAR CONTRASEÑA (RESET PASSWORD)
 export async function adminResetPassword(userId: string, newPassword: string) {
   await checkAdminPermissions();
+  checkDemoRestriction(); // <--- BLOQUEO AQUÍ
 
   const { error } = await supabaseAdmin.auth.admin.updateUserById(
     userId,
@@ -93,9 +104,8 @@ export async function adminResetPassword(userId: string, newPassword: string) {
 // 3. ELIMINAR USUARIO
 export async function adminDeleteUser(userId: string) {
   await checkAdminPermissions();
+  checkDemoRestriction(); // <--- BLOQUEO AQUÍ
 
-  // Esto borrará al usuario de Auth.
-  // Gracias al "ON DELETE CASCADE" de tu base de datos, debería borrar user_roles automáticamente.
   const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
   if (error) throw new Error("Error eliminando usuario: " + error.message);
