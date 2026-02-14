@@ -35,7 +35,7 @@ export default function UsersClient() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      toast.error("Error cargando usuarios: " + error.message);
+      toast.error("Error cargando usuarios");
     } else {
       setUsers(data || []);
     }
@@ -55,13 +55,18 @@ export default function UsersClient() {
       data.append('fullName', formData.fullName);
       data.append('role', formData.role);
 
-      await adminCreateUser(data);
-      toast.success("Usuario creado exitosamente");
-      setIsCreateOpen(false);
-      setFormData({ fullName: '', email: '', password: '', role: 'employee' });
-      fetchUsers();
+      const res = await adminCreateUser(data); 
+
+      if (!res.success) {
+        toast.error(res.error); 
+      } else {
+        toast.success("Usuario creado exitosamente");
+        setIsCreateOpen(false);
+        setFormData({ fullName: '', email: '', password: '', role: 'employee' });
+        fetchUsers();
+      }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error("Error de conexión");
     } finally {
       setPassLoading(false);
     }
@@ -72,26 +77,36 @@ export default function UsersClient() {
     
     setPassLoading(true);
     try {
-      await adminResetPassword(selectedUser.id, newPassword);
-      toast.success(`Contraseña actualizada para ${selectedUser.full_name}`);
-      setIsResetOpen(false);
-      setNewPassword('');
+      const res = await adminResetPassword(selectedUser.id, newPassword);
+
+      if (!res.success) {
+        toast.error(res.error);
+      } else {
+        toast.success(`Contraseña actualizada para ${selectedUser.full_name}`);
+        setIsResetOpen(false);
+        setNewPassword('');
+      }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error("Error de conexión");
     } finally {
       setPassLoading(false);
     }
   };
 
   const handleDelete = async (user: any) => {
-    if(!confirm(`¿Estás seguro de eliminar a ${user.full_name}? Perderá acceso al sistema.`)) return;
+    if(!confirm(`¿Estás seguro de eliminar a ${user.full_name}?`)) return;
     
     try {
-        await adminDeleteUser(user.id);
-        toast.success("Usuario eliminado");
-        fetchUsers();
+        const res = await adminDeleteUser(user.id);
+
+        if (!res.success) {
+            toast.error(res.error);
+        } else {
+            toast.success("Usuario eliminado");
+            fetchUsers();
+        }
     } catch (e: any) {
-        toast.error(e.message);
+        toast.error("Error de conexión");
     }
   };
 
