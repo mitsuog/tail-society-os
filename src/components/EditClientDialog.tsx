@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { 
@@ -28,10 +28,18 @@ interface Client {
 interface EditClientDialogProps {
   client: Client;
   trigger?: React.ReactNode;
+  open?: boolean; // Propiedad añadida
+  onOpenChange?: (open: boolean) => void; // Propiedad añadida
 }
 
-export default function EditClientDialog({ client, trigger }: EditClientDialogProps) {
-  const [open, setOpen] = useState(false);
+export default function EditClientDialog({ client, trigger, open, onOpenChange }: EditClientDialogProps) {
+  // Lógica para manejar estado controlado o interno
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = open !== undefined;
+  
+  const isOpen = isControlled ? open : internalOpen;
+  const setIsOpen = isControlled ? onOpenChange : setInternalOpen;
+
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
@@ -42,14 +50,32 @@ export default function EditClientDialog({ client, trigger }: EditClientDialogPr
     email: client.email || '',
     notes: client.notes || '',
     status: client.status || 'active',
-    internal_tags: client.internal_tags || ''
+    internal_tags: Array.isArray(client.internal_tags) ? client.internal_tags.join(',') : (client.internal_tags || '')
   });
+
+  // Reset form when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        full_name: client.full_name || '',
+        phone: client.phone || '',
+        email: client.email || '',
+        notes: client.notes || '',
+        status: client.status || 'active',
+        internal_tags: Array.isArray(client.internal_tags) ? client.internal_tags.join(',') : (client.internal_tags || '')
+      });
+    }
+  }, [isOpen, client]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      // Convertir tags de string a array si es necesario, o mantener como string según tu esquema
+      // Asumiendo que internal_tags es text[] o text en tu DB. Ajusta según sea necesario.
+      const tagsToSave = formData.internal_tags; 
+
       const { error } = await supabase
         .from('clients')
         .update({
@@ -58,14 +84,14 @@ export default function EditClientDialog({ client, trigger }: EditClientDialogPr
           email: formData.email || null,
           notes: formData.notes || null,
           status: formData.status,
-          internal_tags: formData.internal_tags || null
+          internal_tags: tagsToSave // Asegúrate que coincida con tu DB
         })
         .eq('id', client.id);
 
       if (error) throw error;
 
       toast.success("Cliente actualizado correctamente");
-      setOpen(false);
+      if (setIsOpen) setIsOpen(false);
       router.refresh();
 
     } catch (error: any) {
@@ -76,16 +102,18 @@ export default function EditClientDialog({ client, trigger }: EditClientDialogPr
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600">
-            <Pencil size={16} />
-          </Button>
-        )}
-      </DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      {/* Solo renderizamos el Trigger si no es controlado externamente o si se provee un trigger explícito */}
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger || (
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600">
+              <Pencil size={16} />
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       
-      {/* EL MODAL TIENE Z-100 */}
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto z-[100]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -124,13 +152,10 @@ export default function EditClientDialog({ client, trigger }: EditClientDialogPr
                   <SelectTrigger className={cn("font-medium", formData.status === 'active' ? "text-green-600" : "text-slate-500")}>
                     <SelectValue />
                   </SelectTrigger>
-                  
-                  {/* --- CORRECCIÓN AQUÍ: z-[200] --- */}
                   <SelectContent className="z-[200]"> 
                     <SelectItem value="active">Activo</SelectItem>
                     <SelectItem value="inactive">Inactivo / Vetado</SelectItem>
                   </SelectContent>
-                  
                 </Select>
               </div>
               <div className="space-y-1">
@@ -154,7 +179,7 @@ export default function EditClientDialog({ client, trigger }: EditClientDialogPr
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="outline" onClick={() => setIsOpen && setIsOpen(false)}>Cancelar</Button>
             <Button type="submit" disabled={loading} className="bg-slate-900 min-w-[120px] text-white">
               {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
               Guardar Cambios

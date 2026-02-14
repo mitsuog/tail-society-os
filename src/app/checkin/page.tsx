@@ -24,7 +24,6 @@ const SignatureCanvas = dynamic(() => import('react-signature-canvas'), {
 
 type Step = 'welcome' | 'client-info' | 'pet-info' | 'waiver' | 'success';
 
-// EXACTAMENTE COMO AddPetDialog.tsx
 interface Pet {
   name: string;
   species: string;
@@ -46,7 +45,6 @@ interface Pet {
   notes: string;
 }
 
-// EXACTAMENTE COMO tus dialogs
 interface ClientData {
   full_name: string;
   phone: string;
@@ -74,17 +72,15 @@ const INITIAL_PET_DATA: Pet = {
   notes: ''
 };
 
-// Componente DatePicker Simple - Sin dependencia de Calendar
+// Componente DatePicker Simple
 function BirthDatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
   const [open, setOpen] = useState(false);
   
-  // Parse current value
   const currentDate = value ? new Date(value) : null;
   const [year, setYear] = useState(currentDate?.getFullYear() || new Date().getFullYear());
   const [month, setMonth] = useState(currentDate?.getMonth() || 0);
   const [day, setDay] = useState(currentDate?.getDate() || 1);
 
-  // Generar opciones
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 21 }, (_, i) => currentYear - i);
   const months = [
@@ -92,7 +88,6 @@ function BirthDatePicker({ value, onChange }: { value: string; onChange: (date: 
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
   ];
   
-  // Calcular días del mes
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
@@ -253,7 +248,6 @@ export default function CheckinPage() {
     setLoading(true);
 
     try {
-      // EXACTAMENTE como AddPetDialog.tsx
       const petPayload = {
         client_id: clientId,
         name: currentPet.name,
@@ -284,7 +278,6 @@ export default function CheckinPage() {
 
       setPets([...pets, currentPet]);
       
-      // Usar window.confirm (nativo)
       const addAnother = window.confirm(
         `✅ "${currentPet.name}" registrado.\n\n¿Deseas agregar otra mascota?`
       );
@@ -319,7 +312,6 @@ export default function CheckinPage() {
 
       if (!blob) throw new Error('Error al generar imagen de firma');
 
-      // Subir firma
       const fileName = `waiver-${clientId}-${Date.now()}.png`;
       const { error: uploadError } = await supabase.storage
         .from('signatures')
@@ -333,7 +325,6 @@ export default function CheckinPage() {
 
       const now = new Date().toISOString();
 
-      // Actualizar todas las mascotas del cliente
       const { error: updateError } = await supabase
         .from('pets')
         .update({
@@ -364,7 +355,6 @@ export default function CheckinPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl border-0 shadow-2xl">
           <CardContent className="p-12 text-center space-y-8">
-            {/* Logo de Tail Society */}
             <div className="flex justify-center">
               <div className="relative">
                 <div className="absolute inset-0 bg-blue-400 rounded-full blur-3xl opacity-20 animate-pulse" />
@@ -376,32 +366,13 @@ export default function CheckinPage() {
               </div>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-4">
               <h1 className="text-4xl font-bold text-slate-900">
                 ¡Bienvenido a Tail Society!
               </h1>
-              <p className="text-xl text-slate-600">
-                Registro de cliente nuevo
+              <p className="text-lg text-slate-600 max-w-lg mx-auto">
+                En este formato podrás iniciar tu registro con nosotros en muy sencillos pasos.
               </p>
-            </div>
-
-            <div className="grid grid-cols-4 gap-3 max-w-2xl mx-auto">
-              <div className="p-4 bg-blue-50 rounded-xl">
-                <User className="h-6 w-6 text-blue-600 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-700">Tus Datos</p>
-              </div>
-              <div className="p-4 bg-purple-50 rounded-xl">
-                <PawPrint className="h-6 w-6 text-purple-600 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-700">Mascotas</p>
-              </div>
-              <div className="p-4 bg-amber-50 rounded-xl">
-                <FileSignature className="h-6 w-6 text-amber-600 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-700">Contrato</p>
-              </div>
-              <div className="p-4 bg-green-50 rounded-xl">
-                <CheckCircle2 className="h-6 w-6 text-green-600 mx-auto mb-2" />
-                <p className="text-xs font-medium text-slate-700">Listo</p>
-              </div>
             </div>
 
             <Button
@@ -423,7 +394,6 @@ export default function CheckinPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl border-0 shadow-2xl">
           <CardHeader className="border-b bg-gradient-to-r from-blue-600 to-purple-600 text-white p-8">
-            {/* Logo en header */}
             <div className="flex justify-center mb-4">
               <img 
                 src="/Logo500x500.png" 
@@ -522,7 +492,6 @@ export default function CheckinPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-3xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
           <CardHeader className="border-b bg-gradient-to-r from-purple-600 to-pink-600 text-white p-8 sticky top-0 z-10">
-            {/* Logo en header */}
             <div className="flex justify-center mb-4">
               <img 
                 src="/Logo500x500.png" 
@@ -554,7 +523,6 @@ export default function CheckinPage() {
           <CardContent className="p-8">
             <form onSubmit={handlePetInfoSubmit} className="space-y-6">
               
-              {/* INFORMACIÓN BÁSICA */}
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <PawPrint size={14} /> Información General
@@ -638,7 +606,6 @@ export default function CheckinPage() {
                 </div>
               </div>
 
-              {/* VACUNACIÓN */}
               <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -665,7 +632,6 @@ export default function CheckinPage() {
                 )}
               </div>
 
-              {/* CUESTIONARIO DE SALUD Y COMPORTAMIENTO */}
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
                   <AlertTriangle size={14} /> Cuestionario de Comportamiento y Salud
@@ -735,7 +701,6 @@ export default function CheckinPage() {
                 </div>
               </div>
 
-              {/* NOTAS */}
               <div className="space-y-2">
                 <Label>Notas Adicionales (Opcional)</Label>
                 <Textarea
@@ -776,7 +741,6 @@ export default function CheckinPage() {
       <div className="min-h-screen bg-slate-100 py-8 px-4 flex justify-center items-start">
         <Card className="w-full max-w-lg shadow-2xl border-slate-200 overflow-hidden">
           <CardHeader className="text-center border-b bg-white pb-6 pt-8">
-            {/* Logo */}
             <div className="flex justify-center mb-4">
               <img 
                 src="/Logo500x500.png" 
@@ -794,7 +758,6 @@ export default function CheckinPage() {
           
           <CardContent className="space-y-6 pt-6 bg-slate-50/50">
             
-            {/* DATOS DEL CLIENTE Y MASCOTAS */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-2">
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <User size={16} className="text-slate-400"/>
@@ -811,43 +774,61 @@ export default function CheckinPage() {
               </div>
             </div>
 
-            {/* TEXTO LEGAL RESUMIDO */}
             <div className="bg-white p-5 rounded-xl border border-slate-200 h-80 overflow-y-auto text-xs text-slate-700 leading-relaxed">
-              <div className="space-y-3">
-                <div>
-                  <strong className="text-slate-900 block mb-1">1. Naturaleza del Servicio</strong>
-                  <p>La estética canina involucra trabajo con seres vivos que pueden tener movimientos impredecibles. A pesar de nuestros protocolos de seguridad, existen riesgos inherentes al usar herramientas punzocortantes.</p>
+              <div className="space-y-6">
+                <div className="text-center font-bold text-sm text-slate-900 uppercase tracking-wide border-b pb-2">
+                  Aviso de Acuerdos de Servicio y Admisión
                 </div>
 
                 <div>
-                  <strong className="text-slate-900 block mb-1">2. Política de Cero Sedantes</strong>
-                  <p>Tail Society NO utiliza ni administra tranquilizantes bajo ninguna circunstancia. Si la mascota llega sedada, el servicio será denegado.</p>
+                  <strong className="text-slate-900 block mb-2 text-sm">1. Naturaleza del Servicio y Seguridad</strong>
+                  <p>
+                    Yo <strong>{clientData.full_name || '____________________'}</strong> entiendo que la estética canina es una actividad que involucra el trabajo directo con seres vivos, los cuales pueden tener movimientos repentinos e impredecibles. Acepto que, a pesar de los protocolos de seguridad y el manejo profesional de Tail Society, existen riesgos inherentes (como rasguños menores o irritación) al utilizar herramientas punzocortantes en animales en movimiento mismos que entiendo y acepto al firmar este acuerdo.
+                  </p>
+                  <div className="bg-red-50 p-3 rounded border border-red-100 mt-3">
+                    <strong className="text-red-900 block mb-1">Política de Cero Sedantes:</strong>
+                    <p className="text-red-800">
+                      Tail Society NO utiliza ni administra tranquilizantes o sedantes bajo ninguna circunstancia. Si la mascota arriba bajo el efecto de sedantes previamente administrados por el dueño, el servicio será denegado por seguridad cardíaca del animal.
+                    </p>
+                  </div>
                 </div>
 
                 <div>
-                  <strong className="text-slate-900 block mb-1">3. Suspensión del Servicio</strong>
-                  <p>Nos reservamos el derecho de suspender el servicio ante signos de estrés severo o agresividad incontrolable.</p>
+                  <strong className="text-slate-900 block mb-2 text-sm">2. Suspensión y Admisión</strong>
+                  <p className="mb-2">Nos reservamos el derecho de suspender o negar el servicio en cualquier momento si la mascota muestra signos de:</p>
+                  <ul className="list-disc pl-4 space-y-1 mb-3">
+                    <li><strong>Estrés severo o pánico:</strong> Priorizamos la integridad mental y física de la mascota.</li>
+                    <li><strong>Agresividad incontrolable:</strong> Si la mascota intenta morder al personal o ataca a otros perros.</li>
+                  </ul>
+                  <p>
+                    <strong>Derecho de Admisión y Trato Digno:</strong> Tail Society mantiene una política de Cero Tolerancia al Maltrato. Nos reservamos el derecho de admisión ante cualquier conducta violenta, física o verbal, por parte de los propietarios hacia el personal o hacia las mascotas.
+                  </p>
                 </div>
 
                 <div>
-                  <strong className="text-slate-900 block mb-1">4. Condiciones del Pelaje</strong>
-                  <p>Si el pelaje presenta nudos pegados a la piel, se procederá obligatoriamente al rapado sanitario. No somos responsables por irritaciones descubiertas al remover nudos.</p>
+                  <strong className="text-slate-900 block mb-2 text-sm">3. Condiciones del Manto y Parásitos</strong>
+                  <p className="mb-2">
+                    <strong>Política de Nudos y Condiciones del manto:</strong> Si el pelaje presenta nudos pegados a la piel, por bienestar animal, NO se intentarán deshacer con cepillo, ya que esto causa dolor severo y daños a la piel. Se procederá obligatoriamente al rapado sanitario.
+                  </p>
+                  <p className="mb-3">
+                    <strong>Liberación de Responsabilidad:</strong> Al retirar nudos apretados, es común descubrir (o que se generen) irritaciones, enrojecimientos o hematomas debido a la falta de circulación sanguínea previa. Tail Society no es responsable por estas condiciones provocadas por el estado del manto previo a la cita.
+                  </p>
+                  <div className="bg-amber-50 p-3 rounded border border-amber-100">
+                    <p className="text-amber-900">
+                      Si se detectan ectoparásitos (pulgas/garrapatas), y estos no se declaran, se suspenderá el servicio de inmediato por integridad de las mascotas presentes y se aplicará un cargo automático de <strong>$500.00 MXN</strong> por fumigación y limpieza profunda del área.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="bg-red-50 p-3 rounded border border-red-100">
-                  <strong className="text-red-900">5. Ectoparásitos</strong>
-                  <p className="text-red-800">Si se detectan pulgas/garrapatas no declaradas, se suspenderá el servicio y se aplicará cargo de $500 MXN por fumigación.</p>
-                </div>
-
-                <div className="pt-3 border-t">
-                  <p className="font-bold text-slate-900 text-center">
-                    Al firmar, acepto las condiciones estipuladas y declaro que la información proporcionada es verídica.
+                <div className="pt-4 border-t text-[10px] text-slate-500 text-justify">
+                  <p>Sus datos personales son tratados conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP). Puede consultar nuestro Aviso de Privacidad Integral en nuestro sitio web.</p>
+                  <p className="mt-2 font-bold text-slate-900">
+                    Al marcar esta casilla y firmar, declaro que la información proporcionada es verídica y acepto las condiciones estipuladas.
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* ÁREA DE FIRMA */}
             <div className="space-y-2">
               <div className="flex justify-between items-end">
                 <Label className="text-sm font-bold uppercase text-slate-900">Tu Firma</Label>
@@ -908,7 +889,6 @@ export default function CheckinPage() {
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-2xl border-0 shadow-2xl">
           <CardContent className="p-12 text-center space-y-8">
-            {/* Logo arriba */}
             <div className="flex justify-center mb-4">
               <img 
                 src="/Logo500x500.png" 
@@ -931,57 +911,34 @@ export default function CheckinPage() {
                 ¡Registro Completado!
               </h1>
               <p className="text-xl text-slate-600">
-                Bienvenido a la familia Tail Society
+                Número de confirmación: <span className="font-mono font-bold text-slate-900">TS-{clientId?.slice(0, 8).toUpperCase()}</span>
               </p>
             </div>
 
-            <div className="bg-green-50 rounded-xl p-6 space-y-3">
-              <p className="text-lg font-semibold text-slate-900">
-                Resumen de tu registro:
-              </p>
-              <div className="space-y-2 text-left max-w-md mx-auto">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                  <span className="text-slate-700">
-                    <strong>{clientData.full_name}</strong> registrado
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                  <span className="text-slate-700">
-                    <strong>{pets.length}</strong> {pets.length === 1 ? 'mascota registrada' : 'mascotas registradas'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                  <span className="text-slate-700">Contrato firmado digitalmente</span>
-                </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 text-left space-y-4">
+              <h3 className="font-bold text-blue-900 text-lg flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                Próximos Pasos
+              </h3>
+              <div className="space-y-3 text-blue-800 text-sm leading-relaxed">
+                <p>
+                  Si te pedimos registrarte como cliente nuevo para generar tu cita, <strong>solo confírmanos por favor que ya lo hiciste</strong> para continuar con tu proceso de gestión de cita.
+                </p>
+                <p>
+                  <strong>No es necesario volver a realizar el registro</strong>. Tus datos ya están seguros en nuestro sistema.
+                </p>
+                <p>
+                  Si olvidaste agregar una mascota, puedes pedirle al staff que te apoyen en concluir el alta directamente en mostrador.
+                </p>
               </div>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <h3 className="font-semibold text-blue-900 mb-2">Próximos Pasos:</h3>
-              <ul className="text-sm text-blue-800 space-y-1 text-left max-w-md mx-auto">
-                <li>• Recibirás confirmación por mensaje</li>
-                <li>• Nuestro equipo te contactará para agendar tu primera cita</li>
-                <li>• Puedes llamar al establecimiento para programar tu servicio</li>
-              </ul>
-            </div>
-
             <Button
-              onClick={() => {
-                // Resetear todo el estado
-                setStep('welcome');
-                setClientData({ full_name: '', phone: '', email: '' });
-                setPets([]);
-                setCurrentPet(INITIAL_PET_DATA);
-                setClientId(null);
-                toast.success('¡Listo para registrar otro cliente!');
-              }}
+              onClick={() => window.location.reload()}
               size="lg"
               className="w-full max-w-xs h-14 text-lg bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
             >
-              Registrar Otro Cliente
+              Finalizar
             </Button>
           </CardContent>
         </Card>
@@ -992,7 +949,6 @@ export default function CheckinPage() {
   return null;
 }
 
-// Componente auxiliar para switches
 interface SwitchFieldProps {
   label: string;
   checked: boolean;

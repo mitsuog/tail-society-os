@@ -1,91 +1,117 @@
 'use client';
 
-import Link from 'next/link';
-import { MoreHorizontal, MessageCircle, Copy, Pencil, Eye } from 'lucide-react';
-import { Button } from "@/components/ui/button";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+import { MoreHorizontal, Pencil, Trash2, FileText } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu";
-import { toast } from "sonner";
+} from '@/components/ui/dropdown-menu';
+import { useUserRole } from '@/hooks/useUserRole'; // Hook para verificar rol
 import EditClientDialog from '@/components/EditClientDialog';
+import DeleteAlert from '@/components/DeleteAlert'; // Componente de alerta
+import { toast } from 'sonner';
 
 interface ClientActionsProps {
-  client: any; 
+  client: any; // O usa la interfaz Client definida en tu proyecto
 }
 
 export default function ClientActions({ client }: ClientActionsProps) {
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
-  const getWhatsappLink = (phone: string, name: string) => {
-    if (!phone) return '#';
-    const clean = phone.replace(/\D/g, '');
-    return `https://wa.me/52${clean}?text=${encodeURIComponent(`Hola ${name.split(' ')[0]}, te contactamos de TailSociety 🐾`)}`;
-  };
+  const { role } = useUserRole(); // Obtenemos el rol del usuario actual
+  const router = useRouter();
+  const supabase = createClient();
 
-  const handleCopyPhone = () => {
-    navigator.clipboard.writeText(client.phone);
-    toast.success("Teléfono copiado al portapapeles");
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      // Eliminar el cliente
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', client.id);
+
+      if (error) throw error;
+
+      toast.success('Cliente eliminado correctamente');
+      setIsDeleteOpen(false);
+      router.refresh(); // Recargar la tabla
+    } catch (error: any) {
+      console.error('Error deleting client:', error);
+      toast.error('Error al eliminar cliente: ' + error.message);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
-    <div className="flex justify-end items-center gap-1">
-      {/* 1. WhatsApp */}
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 text-green-600 hover:bg-green-50 hover:text-green-700 rounded-full"
-        onClick={() => window.open(getWhatsappLink(client.phone, client.full_name), '_blank')}
-        title="Enviar WhatsApp"
-      >
-        <MessageCircle className="h-4 w-4" />
-      </Button>
-
-      {/* 2. Editar Cliente */}
-      <EditClientDialog 
-        client={client}
-        trigger={
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full" title="Editar">
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        }
-      />
-
-      {/* 3. Ver Expediente (Icono Ojo) */}
-      <Link href={`/clients/${client.id}`}>
-        <Button 
-          size="icon" 
-          variant="ghost" 
-          className="h-8 w-8 text-blue-600 hover:bg-blue-50 hover:text-blue-700 rounded-full" 
-          title="Ver Expediente"
-        >
-          <Eye className="h-4 w-4" />
-        </Button>
-      </Link>
-
-      {/* 4. Menú Extra */}
+    <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full">
+          <Button variant="ghost" className="h-8 w-8 p-0">
+            <span className="sr-only">Abrir menú</span>
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent align="end">
           <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-          <DropdownMenuItem onClick={handleCopyPhone} className="cursor-pointer gap-2">
-            <Copy size={14} /> Copiar Teléfono
+          <DropdownMenuItem
+            onClick={() => navigator.clipboard.writeText(client.id)}
+          >
+            Copiar ID
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href={`/clients/${client.id}`} className="cursor-pointer gap-2">
-               <Eye size={14} /> Ir a Expediente
-            </Link>
+          
+          {/* Opción de Ver Detalle */}
+          <DropdownMenuItem onClick={() => router.push(`/clients/${client.id}`)}>
+            <FileText className="mr-2 h-4 w-4" /> Ver Expediente
           </DropdownMenuItem>
+
+          {/* Opción de Editar */}
+          <DropdownMenuItem onClick={() => setIsEditOpen(true)}>
+            <Pencil className="mr-2 h-4 w-4" /> Editar
+          </DropdownMenuItem>
+
+          {/* Opción de Eliminar (Solo Admin) */}
+          {role === 'admin' && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => setIsDeleteOpen(true)}
+                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+              >
+                <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+
+      {/* Diálogo de Edición */}
+      <EditClientDialog 
+        client={client} 
+        open={isEditOpen} 
+        onOpenChange={setIsEditOpen} 
+      />
+
+      {/* Alerta de Eliminación */}
+      <DeleteAlert
+        open={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        onConfirm={handleDelete}
+        title="¿Estás seguro?"
+        description={`Esta acción eliminará permanentemente al cliente ${client.full_name} y todos sus datos asociados (mascotas, citas, historial). Esta acción no se puede deshacer.`}
+        loading={isDeleting}
+      />
+    </>
   );
 }

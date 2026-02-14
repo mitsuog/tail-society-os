@@ -1,6 +1,5 @@
 'use client';
 
-// 1. CORRECCIÓN AQUÍ: Usamos el alias '@' igual que en el botón
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,29 +21,43 @@ interface DeleteAlertProps {
   description: string;
   onConfirm: () => Promise<void>;
   trigger?: React.ReactNode;
+  open?: boolean; // Propiedad añadida
+  onOpenChange?: (open: boolean) => void; // Propiedad añadida
+  loading?: boolean; // Propiedad añadida para manejar estado de carga externo
 }
 
-export default function DeleteAlert({ title, description, onConfirm, trigger }: DeleteAlertProps) {
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+export default function DeleteAlert({ title, description, onConfirm, trigger, open, onOpenChange, loading: externalLoading }: DeleteAlertProps) {
+  const [internalLoading, setInternalLoading] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
+  const setIsOpen = isControlled ? onOpenChange : setInternalOpen;
+  
+  // Usar loading externo si se provee, sino el interno
+  const isLoading = externalLoading !== undefined ? externalLoading : internalLoading;
 
   const handleConfirm = async (e: React.MouseEvent) => {
     e.preventDefault();
-    setLoading(true);
+    if (externalLoading === undefined) setInternalLoading(true);
+    
     await onConfirm();
-    setLoading(false);
-    setOpen(false);
+    
+    if (externalLoading === undefined) setInternalLoading(false);
+    if (setIsOpen) setIsOpen(false);
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        {trigger || (
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50">
-            <Trash2 size={16} />
-          </Button>
-        )}
-      </AlertDialogTrigger>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+      {!isControlled && (
+        <AlertDialogTrigger asChild>
+          {trigger || (
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50">
+              <Trash2 size={16} />
+            </Button>
+          )}
+        </AlertDialogTrigger>
+      )}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="text-red-600 flex items-center gap-2">
@@ -55,13 +68,13 @@ export default function DeleteAlert({ title, description, onConfirm, trigger }: 
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel disabled={isLoading} onClick={() => setIsOpen && setIsOpen(false)}>Cancelar</AlertDialogCancel>
           <AlertDialogAction 
             onClick={handleConfirm} 
             className="bg-red-600 hover:bg-red-700 text-white border-red-700"
-            disabled={loading}
+            disabled={isLoading}
           >
-            {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+            {isLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
             Sí, eliminar definitivamente
           </AlertDialogAction>
         </AlertDialogFooter>
