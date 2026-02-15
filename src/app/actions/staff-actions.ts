@@ -3,12 +3,10 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 
-// --- 1. GESTIÓN FINANCIERA (Configuración de empleado) ---
-
+// --- 1. GESTIÓN FINANCIERA (Sin cambios) ---
 export async function updateEmployeeFinancials(employeeId: string, data: any) {
   const supabase = await createClient();
 
-  // Actualizar configuración de comisiones en el empleado
   const { error: empError } = await supabase
     .from('employees')
     .update({
@@ -19,16 +17,13 @@ export async function updateEmployeeFinancials(employeeId: string, data: any) {
 
   if (empError) throw new Error("Error al actualizar empleado: " + empError.message);
 
-  // Calcular totales
   const totalSalary = Number(data.salary_bank) + Number(data.salary_cash);
   
-  // Metadata para desglose Banco vs Efectivo
   const salaryMetadata = {
     bank_dispersion: Number(data.salary_bank),
     cash_difference: Number(data.salary_cash)
   };
 
-  // Buscar contrato activo
   const { data: contracts } = await supabase
     .from('employee_contracts')
     .select('*')
@@ -36,7 +31,6 @@ export async function updateEmployeeFinancials(employeeId: string, data: any) {
     .eq('is_active', true);
 
   if (contracts && contracts.length > 0) {
-    // Actualizar contrato existente
     const { error: contractError } = await supabase
       .from('employee_contracts')
       .update({
@@ -47,7 +41,6 @@ export async function updateEmployeeFinancials(employeeId: string, data: any) {
 
     if (contractError) throw new Error("Error al actualizar contrato: " + contractError.message);
   } else {
-    // Crear nuevo contrato si no existe
     const { error: newContractError } = await supabase
       .from('employee_contracts')
       .insert({
@@ -66,12 +59,10 @@ export async function updateEmployeeFinancials(employeeId: string, data: any) {
   return { success: true };
 }
 
-// --- 2. GESTIÓN DE PERSONAL (CRUD y Perfil) ---
-
+// --- 2. GESTIÓN DE PERSONAL (Sin cambios) ---
 export async function createEmployee(data: any) {
   const supabase = await createClient();
   
-  // Insertar empleado
   const { data: newEmp, error } = await supabase.from('employees').insert({
     first_name: data.first_name,
     last_name: data.last_name,
@@ -81,13 +72,12 @@ export async function createEmployee(data: any) {
     color: data.color || '#64748b',
     active: true,
     show_in_calendar: data.show_in_calendar,
-    commission_type: 'total', // Default
-    participation_pct: 0      // Default
+    commission_type: 'total', 
+    participation_pct: 0      
   }).select().single();
 
   if (error) throw new Error("Error creando empleado: " + error.message);
   
-  // Crear contrato inicial en ceros para evitar errores en nómina
   const { error: contractError } = await supabase.from('employee_contracts').insert({
     employee_id: newEmp.id,
     base_salary_weekly: 0,
@@ -123,7 +113,7 @@ export async function toggleEmployeeStatus(id: string, currentStatus: boolean) {
     const supabase = await createClient();
     const { error } = await supabase.from('employees').update({
         active: !currentStatus,
-        show_in_calendar: !currentStatus // Si se desactiva, se quita del calendario automáticamente
+        show_in_calendar: !currentStatus 
     }).eq('id', id);
 
     if (error) throw new Error("Error cambiando estatus: " + error.message);
@@ -131,13 +121,16 @@ export async function toggleEmployeeStatus(id: string, currentStatus: boolean) {
     return { success: true };
 }
 
-// --- 3. GESTIÓN DE AUSENCIAS Y VACACIONES ---
-
+// --- 3. GESTIÓN DE AUSENCIAS Y VACACIONES (MODIFICADO) ---
 export async function addEmployeeAbsence(employeeId: string, type: string, start: Date, end: Date, notes: string) {
   const supabase = await createClient();
+  
+  // [CAMBIO IMPORTANTE]: Normalizamos el texto para evitar errores de mayúsculas/minúsculas
+  const normalizedType = type.toLowerCase().trim();
+
   const { error } = await supabase.from('employee_absences').insert({
     employee_id: employeeId,
-    type, // 'vacation', 'sick', 'personal', 'unjustified'
+    type: normalizedType, // Ahora guardamos siempre en minúsculas (ej: 'unjustified', 'sick')
     start_date: start.toISOString(),
     end_date: end.toISOString(),
     reason: notes
@@ -145,12 +138,11 @@ export async function addEmployeeAbsence(employeeId: string, type: string, start
 
   if (error) throw new Error("Error registrando ausencia: " + error.message);
   revalidatePath('/admin/staff');
-  revalidatePath('/admin/payroll'); // Recalcular nómina
+  revalidatePath('/admin/payroll'); 
   return { success: true };
 }
 
-// --- 4. EXPEDIENTE DIGITAL (Documentos) ---
-
+// --- 4. EXPEDIENTE DIGITAL (Sin cambios) ---
 export async function registerDocument(employeeId: string, name: string, url: string, type: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('employee_documents').insert({

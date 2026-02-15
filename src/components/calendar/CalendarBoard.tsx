@@ -24,7 +24,13 @@ import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog
 
 // --- Interfaces ---
 interface Employee {
-  id: string; first_name: string; last_name: string; role: string; avatar_url: string | null; color: string;
+  id: string; 
+  first_name: string; 
+  last_name: string; 
+  role: string; 
+  avatar_url: string | null; 
+  color: string;
+  show_in_calendar?: boolean; // <--- CAMBIO 1: Agregado campo opcional
 }
 
 interface Holiday {
@@ -116,7 +122,13 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
             <div className="flex items-start justify-between mb-2 pb-2 border-b border-black/5 mt-1">
                 <div>
                     <h4 className={cn("font-bold text-sm", styles.text)}>{data.appointment?.pet?.name}</h4>
-                    <div className="flex items-center gap-1 opacity-70 mt-0.5"><PawPrint size={10}/> <span>{data.appointment?.pet?.breed}</span></div>
+                    <div className="flex items-center gap-1 opacity-70 mt-0.5">
+                        <PawPrint size={10}/> 
+                        <span>
+                            {data.appointment?.pet?.breed} 
+                            {data.appointment?.pet?.size && ` • ${data.appointment?.pet?.size}`}
+                        </span>
+                    </div>
                 </div>
             </div>
             <div className="space-y-2">
@@ -204,12 +216,29 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     if (!isMounted) return [];
 
     if (viewState === 'day') {
-      return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
+      // <--- CAMBIO 2: Filtrado de empleados visibles
+      const visibleEmployees = employees.filter(emp => emp.show_in_calendar !== false);
+      
+      return visibleEmployees.map(emp => ({ 
+          id: emp.id, 
+          title: emp.first_name, 
+          subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, 
+          data: emp, 
+          type: 'employee', 
+          isToday: true 
+      }));
     } else {
       let daysToShow = viewState === '3day' ? 3 : 7;
       return Array.from({ length: daysToShow }).map((_, i) => {
         const date = addDays(dateState, i);
-        return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
+        return { 
+            id: format(date, 'yyyy-MM-dd'), 
+            title: format(date, 'EEEE d', { locale: es }), 
+            subtitle: format(date, 'MMMM', { locale: es }), 
+            type: 'date', 
+            data: date, 
+            isToday: isSameDay(date, new Date()) 
+        };
       });
     }
   }, [viewState, dateState, employees, isMounted]);
@@ -280,7 +309,7 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const queryEnd = addDays(endRange, 1).toISOString();
 
       const { data: apptData } = await supabase.from('appointment_services')
-        .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
+        .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed, size), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
         .gte('start_time', queryStart)
         .lte('end_time', queryEnd);
       
@@ -1030,6 +1059,14 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                         <div className={cn("absolute left-0 top-0 bottom-0 w-1", styles.accentBar)}></div>
                                         <div className="pl-2 w-full overflow-hidden flex flex-col h-full pointer-events-none select-none">
                                             <div className="flex justify-between items-center w-full"><span className={cn("font-bold truncate text-[10px] md:text-[11px]", styles.text)}>{appt.appointment?.pet?.name}</span>{appt.height > 30 && <span className="text-[8px] md:text-[9px] opacity-60 font-mono ml-1 shrink-0">{format(parseISO(appt.start_time), 'HH:mm')} - {isBeingResized ? format(addMinutes(parseISO(appt.start_time), resizing.newDuration), 'HH:mm') : format(parseISO(appt.end_time), 'HH:mm')}</span>}</div>
+                                            
+                                            {/* MODIFICADO: Agregar Raza y Talla si hay espacio */}
+                                            {appt.height > 40 && (
+                                                <div className="text-[9px] opacity-80 truncate leading-tight -mt-0.5 text-slate-500">
+                                                    {appt.appointment?.pet?.breed} {appt.appointment?.pet?.size && `• ${appt.appointment?.pet?.size}`}
+                                                </div>
+                                            )}
+
                                             {appt.height > 45 && (<div className="flex items-center gap-1 mt-auto"><CategoryIcon size={10} className={styles.subtext} /><span className={cn("font-medium uppercase tracking-tight line-clamp-1 text-[8px] md:text-[9px]", styles.subtext)}>{appt.service?.name}</span></div>)}
                                         </div>
                                         
