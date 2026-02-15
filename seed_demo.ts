@@ -8,7 +8,7 @@ import { addMinutes, subDays, addDays, isWeekend } from 'date-fns';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.demo') });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // ¡DEBE SER LA SERVICE_ROLE KEY!
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error("❌ Error CRÍTICO: No se encontraron las llaves en .env.demo");
@@ -31,7 +31,7 @@ const SERVICES = [
   { name: 'Pedicure & Bálsamo', price: 250, duration: 30, category: 'addon' },
 ];
 
-// 2. Productos de Tienda (Para simular venta cruzada)
+// 2. Productos de Tienda
 const STORE_ITEMS = [
   { name: 'Shampoo Artero Hidratante', price: 450 },
   { name: 'Perfume For Pets', price: 320 },
@@ -47,7 +47,7 @@ const COMMISSION_TIERS = [
     { name: 'Ventas Tienda', type: 'total', min_sales: 0, max_sales: 999999, percentage: 0.10 },
 ];
 
-// 4. Empleados (Configurados para Pool)
+// 4. Empleados
 const EMPLOYEES = [
   { first_name: 'Ana', last_name: 'Estilista', role: 'stylist', color: '#ec4899', commission_type: 'grooming', participation: 100, salary: 3000 },
   { first_name: 'Carlos', last_name: 'Bañador', role: 'bather', color: '#3b82f6', commission_type: 'grooming', participation: 100, salary: 2500 },
@@ -67,7 +67,6 @@ async function getOrCreateAuthUser(email: string, name: string) {
     });
     if (data.user) return data.user.id;
     
-    // Si ya existe, intentamos buscarlo
     if (error?.status === 422) {
         const { data: users } = await supabase.auth.admin.listUsers();
         return users.users.find(u => u.email === email)?.id;
@@ -99,9 +98,7 @@ async function seed() {
   ];
   
   for (const table of tables) {
-      // Usamos un filtro dummy para borrar todo sin restricciones
       await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
-      // Nota: Para tablas con ID numérico (si las hubiera), usa .neq('id', 0)
   }
   console.log('✨ Base de datos limpia.');
 
@@ -110,8 +107,15 @@ async function seed() {
   // -------------------------------------------------------------
   await supabase.from('commission_tiers').insert(COMMISSION_TIERS);
   
+  // CORRECCIÓN AQUÍ: Mapeo correcto de nombres de columnas
   for (const svc of SERVICES) {
-      await supabase.from('services').insert({ ...svc, active: true });
+      await supabase.from('services').insert({ 
+          name: svc.name,
+          base_price: svc.price,          // Mapeo: price -> base_price
+          duration_minutes: svc.duration, // Mapeo: duration -> duration_minutes
+          category: svc.category,
+          active: true 
+      });
   }
   
   await supabase.from('official_holidays').insert([
@@ -197,13 +201,21 @@ async function seed() {
   }
 
   // -------------------------------------------------------------
-  // 5. AGENDA & VENTAS HARDCODED (La Magia)
+  // 5. AGENDA & VENTAS HARDCODED
   // -------------------------------------------------------------
   const today = new Date();
   let totalAppointments = 0;
+  
+  // Obtenemos los servicios insertados (ahora sí con las columnas correctas)
   const { data: dbServices } = await supabase.from('services').select('*');
 
-  if (petIds.length > 0 && empIds.length > 0 && dbServices) {
+  // Validación crítica para evitar el crash
+  if (!dbServices || dbServices.length === 0) {
+      console.error("❌ Error: No se pudieron recuperar los servicios de la base de datos.");
+      process.exit(1);
+  }
+
+  if (petIds.length > 0 && empIds.length > 0) {
       
       // RANGO: -35 días a +35 días
       for (let i = -35; i <= 35; i++) { 
@@ -222,14 +234,15 @@ async function seed() {
             const pet = petIds[Math.floor(Math.random() * petIds.length)];
 
             // Horario aleatorio
-            const hour = 9 + j; // Distribuye una cita por hora aprox
+            const hour = 9 + j; 
             if (hour > 18) break;
             
             day.setHours(hour, 0, 0, 0); 
             const startTime = new Date(day);
-            const endTime = addMinutes(startTime, service.duration_minutes);
+            // Ahora duration_minutes existe porque viene de la BD
+            const endTime = addMinutes(startTime, service.duration_minutes || 60); 
 
-            const isPast = i < 0; // Si el día es antes de hoy
+            const isPast = i < 0; 
             const status = isPast ? 'completed' : 'confirmed';
             
             // A. Crear Cita
@@ -257,18 +270,16 @@ async function seed() {
                 });
 
                 // C. HARDCODE DE VENTAS (Solo para citas pasadas)
-                // Esto simula que Zettle ya procesó el pago y facturación.
                 if (isPast) {
-                    const hasProduct = Math.random() > 0.7; // 30% compra producto
+                    const hasProduct = Math.random() > 0.7; 
                     let total = Number(service.base_price);
                     
-                    // Construir Items para Nómina
                     const items = [{
                         name: service.name,
                         quantity: 1,
                         unit_price: service.base_price,
                         amount: service.base_price,
-                        category: 'grooming' // <--- IMPORTANTE PARA EL POOL
+                        category: 'grooming'
                     }];
 
                     if (hasProduct) {
@@ -279,20 +290,19 @@ async function seed() {
                             quantity: 1,
                             unit_price: prod.price,
                             amount: prod.price,
-                            category: 'store' // <--- IMPORTANTE PARA RECEPCIÓN
+                            category: 'store' 
                         });
                     }
 
-                    // Insertar Transacción "Facturada"
                     await supabase.from('sales_transactions').insert({
-                        zettle_id: uuidv4(), // ID Simulado
+                        zettle_id: uuidv4(), 
                         timestamp: startTime.toISOString(),
                         total_amount: total,
-                        tax_amount: total * 0.16, // Simulación de IVA (16%)
+                        tax_amount: total * 0.16, 
                         payment_method: Math.random() > 0.5 ? 'CARD' : 'CASH',
-                        is_grooming: true, // Habilita reparto de pool
+                        is_grooming: true, 
                         is_store: hasProduct,
-                        items: items // JSON detallado
+                        items: items 
                     });
                 }
             }
@@ -301,12 +311,11 @@ async function seed() {
   }
 
   // -------------------------------------------------------------
-  // 6. INCIDENTES (Faltas para probar deducciones)
+  // 6. INCIDENTES
   // -------------------------------------------------------------
   console.log('📉 Generando faltas...');
   if (empIds.length > 0) {
       const targetEmp = empIds[0]; 
-      // Falta hace 3 días
       const d = subDays(new Date(), 3);
       await supabase.from('employee_absences').insert({
           employee_id: targetEmp.id,
