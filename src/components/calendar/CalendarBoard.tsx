@@ -24,7 +24,13 @@ import NewAppointmentDialog from '@/components/appointments/NewAppointmentDialog
 
 // --- Interfaces ---
 interface Employee {
-  id: string; first_name: string; last_name: string; role: string; avatar_url: string | null; color: string;
+  id: string; 
+  first_name: string; 
+  last_name: string; 
+  role: string; 
+  avatar_url: string | null; 
+  color: string;
+  show_in_calendar?: boolean; // <--- CAMBIO 1: Agregado campo opcional
 }
 
 interface Holiday {
@@ -118,7 +124,6 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
                     <h4 className={cn("font-bold text-sm", styles.text)}>{data.appointment?.pet?.name}</h4>
                     <div className="flex items-center gap-1 opacity-70 mt-0.5">
                         <PawPrint size={10}/> 
-                        {/* MODIFICADO: Mostrar Raza y Talla en Tooltip */}
                         <span>
                             {data.appointment?.pet?.breed} 
                             {data.appointment?.pet?.size && ` • ${data.appointment?.pet?.size}`}
@@ -211,12 +216,29 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
     if (!isMounted) return [];
 
     if (viewState === 'day') {
-      return employees.map(emp => ({ id: emp.id, title: emp.first_name, subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, data: emp, type: 'employee', isToday: true }));
+      // <--- CAMBIO 2: Filtrado de empleados visibles
+      const visibleEmployees = employees.filter(emp => emp.show_in_calendar !== false);
+      
+      return visibleEmployees.map(emp => ({ 
+          id: emp.id, 
+          title: emp.first_name, 
+          subtitle: ROLE_TRANSLATIONS[emp.role] || emp.role, 
+          data: emp, 
+          type: 'employee', 
+          isToday: true 
+      }));
     } else {
       let daysToShow = viewState === '3day' ? 3 : 7;
       return Array.from({ length: daysToShow }).map((_, i) => {
         const date = addDays(dateState, i);
-        return { id: format(date, 'yyyy-MM-dd'), title: format(date, 'EEEE d', { locale: es }), subtitle: format(date, 'MMMM', { locale: es }), type: 'date', data: date, isToday: isSameDay(date, new Date()) };
+        return { 
+            id: format(date, 'yyyy-MM-dd'), 
+            title: format(date, 'EEEE d', { locale: es }), 
+            subtitle: format(date, 'MMMM', { locale: es }), 
+            type: 'date', 
+            data: date, 
+            isToday: isSameDay(date, new Date()) 
+        };
       });
     }
   }, [viewState, dateState, employees, isMounted]);
@@ -286,7 +308,6 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const queryStart = subDays(startRange, 1).toISOString();
       const queryEnd = addDays(endRange, 1).toISOString();
 
-      // MODIFICADO: Agregado campo 'size' en la query de pets
       const { data: apptData } = await supabase.from('appointment_services')
         .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed, size), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
         .gte('start_time', queryStart)
