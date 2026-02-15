@@ -116,7 +116,14 @@ const AppointmentTooltip = ({ data, position, userRole }: { data: any, position:
             <div className="flex items-start justify-between mb-2 pb-2 border-b border-black/5 mt-1">
                 <div>
                     <h4 className={cn("font-bold text-sm", styles.text)}>{data.appointment?.pet?.name}</h4>
-                    <div className="flex items-center gap-1 opacity-70 mt-0.5"><PawPrint size={10}/> <span>{data.appointment?.pet?.breed}</span></div>
+                    <div className="flex items-center gap-1 opacity-70 mt-0.5">
+                        <PawPrint size={10}/> 
+                        {/* MODIFICADO: Mostrar Raza y Talla en Tooltip */}
+                        <span>
+                            {data.appointment?.pet?.breed} 
+                            {data.appointment?.pet?.size && ` • ${data.appointment?.pet?.size}`}
+                        </span>
+                    </div>
                 </div>
             </div>
             <div className="space-y-2">
@@ -279,8 +286,9 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
       const queryStart = subDays(startRange, 1).toISOString();
       const queryEnd = addDays(endRange, 1).toISOString();
 
+      // MODIFICADO: Agregado campo 'size' en la query de pets
       const { data: apptData } = await supabase.from('appointment_services')
-        .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
+        .select(`*, appointment:appointments (id, notes, pet:pets (id, name, breed, size), client:clients (id, full_name)), service:services (name, category, duration_minutes)`)
         .gte('start_time', queryStart)
         .lte('end_time', queryEnd);
       
@@ -1030,6 +1038,14 @@ export default function CalendarBoard({ currentDate, view, employees, appointmen
                                         <div className={cn("absolute left-0 top-0 bottom-0 w-1", styles.accentBar)}></div>
                                         <div className="pl-2 w-full overflow-hidden flex flex-col h-full pointer-events-none select-none">
                                             <div className="flex justify-between items-center w-full"><span className={cn("font-bold truncate text-[10px] md:text-[11px]", styles.text)}>{appt.appointment?.pet?.name}</span>{appt.height > 30 && <span className="text-[8px] md:text-[9px] opacity-60 font-mono ml-1 shrink-0">{format(parseISO(appt.start_time), 'HH:mm')} - {isBeingResized ? format(addMinutes(parseISO(appt.start_time), resizing.newDuration), 'HH:mm') : format(parseISO(appt.end_time), 'HH:mm')}</span>}</div>
+                                            
+                                            {/* MODIFICADO: Agregar Raza y Talla si hay espacio */}
+                                            {appt.height > 40 && (
+                                                <div className="text-[9px] opacity-80 truncate leading-tight -mt-0.5 text-slate-500">
+                                                    {appt.appointment?.pet?.breed} {appt.appointment?.pet?.size && `• ${appt.appointment?.pet?.size}`}
+                                                </div>
+                                            )}
+
                                             {appt.height > 45 && (<div className="flex items-center gap-1 mt-auto"><CategoryIcon size={10} className={styles.subtext} /><span className={cn("font-medium uppercase tracking-tight line-clamp-1 text-[8px] md:text-[9px]", styles.subtext)}>{appt.service?.name}</span></div>)}
                                         </div>
                                         
