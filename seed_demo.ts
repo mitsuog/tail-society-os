@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import path from 'path';
-import { addMinutes, subDays } from 'date-fns';
+import { addMinutes, subDays, addDays, isWeekend } from 'date-fns';
 
 // 1. CARGA SEGURA DE VARIABLES
 dotenv.config({ path: path.resolve(process.cwd(), '.env.demo') });
@@ -23,43 +23,43 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   }
 });
 
-// --- DATA MAESTRA ---
-
-const COMMISSION_TIERS = [
-    { name: 'Nivel 1 (Base)', type: 'grooming', min_sales: 0, max_sales: 15000, percentage: 0.30 },
-    { name: 'Nivel 2 (Pro)', type: 'grooming', min_sales: 15001, max_sales: 25000, percentage: 0.35 },
-    { name: 'Nivel 3 (Master)', type: 'grooming', min_sales: 25001, max_sales: 999999, percentage: 0.40 },
-    { name: 'Ventas Tienda', type: 'total', min_sales: 0, max_sales: 999999, percentage: 0.10 },
-];
-
-const EMPLOYEES = [
-  { first_name: 'Ana', last_name: 'Groomer', role: 'stylist', color: '#ec4899', commission_type: 'grooming', participation: 100, salary: 2500 },
-  { first_name: 'Carlos', last_name: 'Bañador', role: 'bather', color: '#3b82f6', commission_type: 'grooming', participation: 100, salary: 1800 },
-  { first_name: 'Sofia', last_name: 'Recepción', role: 'reception', color: '#10b981', commission_type: 'total', participation: 100, salary: 2000 },
-  { first_name: 'Miguel', last_name: 'Senior', role: 'stylist', color: '#f59e0b', commission_type: 'grooming', participation: 100, salary: 3000 },
-];
+// --- DATA MAESTRA: ESTÉTICA PREMIUM & SPA ---
 
 const SERVICES = [
-  { name: 'Corte Schnauzer', price: 650, duration: 90, category: 'cut' },
-  { name: 'Corte Poodle', price: 750, duration: 120, category: 'cut' },
-  { name: 'Baño General', price: 400, duration: 60, category: 'bath' },
-  { name: 'Baño Medicado', price: 550, duration: 70, category: 'bath' },
-  { name: 'Deslanado Profundo', price: 800, duration: 120, category: 'bath' },
-  { name: 'Corte de Uñas', price: 150, duration: 15, category: 'addon' },
+  { name: 'Grooming Completo (Corte de Raza)', price: 850, duration: 120, category: 'cut' },
+  { name: 'Baño Hidratante & Deslanado', price: 650, duration: 90, category: 'bath' },
+  { name: 'Corte Estilo Asiático (Teddy)', price: 950, duration: 150, category: 'cut' },
+  { name: 'Spa de Ozonoterapia', price: 400, duration: 45, category: 'spa' },
+  { name: 'Tratamiento de Keratina', price: 350, duration: 30, category: 'spa' },
+  { name: 'Pedicure & Bálsamo de Patitas', price: 250, duration: 30, category: 'addon' },
 ];
 
-const BREEDS = ['Schnauzer', 'Poodle', 'Golden Retriever', 'Bulldog', 'Mestizo', 'Chihuahua', 'Yorkie', 'Husky'];
+const COMMISSION_TIERS = [
+    { name: 'Nivel 1 (Junior)', type: 'grooming', min_sales: 0, max_sales: 20000, percentage: 0.30 },
+    { name: 'Nivel 2 (Senior)', type: 'grooming', min_sales: 20001, max_sales: 40000, percentage: 0.35 },
+    { name: 'Nivel 3 (Master)', type: 'grooming', min_sales: 40001, max_sales: 999999, percentage: 0.40 },
+    { name: 'Comisión Tienda', type: 'total', min_sales: 0, max_sales: 999999, percentage: 0.10 },
+];
+
+// Configuración para Pool de Grooming (Reparto Equitativo)
+const EMPLOYEES = [
+  { first_name: 'Ana', last_name: 'Estilista', role: 'stylist', color: '#ec4899', commission_type: 'grooming', participation: 100, salary: 3000 },
+  { first_name: 'Carlos', last_name: 'Bañador', role: 'bather', color: '#3b82f6', commission_type: 'grooming', participation: 100, salary: 2500 },
+  { first_name: 'Miguel', last_name: 'Senior', role: 'stylist', color: '#f59e0b', commission_type: 'grooming', participation: 100, salary: 3500 },
+  { first_name: 'Sofia', last_name: 'Recepción', role: 'reception', color: '#10b981', commission_type: 'total', participation: 100, salary: 2800 }, // Ella va por venta total
+];
+
+const BREEDS = ['Poodle Toy', 'Schnauzer Mini', 'Golden Retriever', 'Bulldog Francés', 'Pomerania', 'Samoyedo', 'Yorkshire', 'Mestizo'];
 
 const STORE_ITEMS = [
-  { name: 'Shampoo Premium', price: 250 },
-  { name: 'Juguete Hueso', price: 120 },
-  { name: 'Correa Paseo', price: 350 },
-  { name: 'Premios Bolsa', price: 90 },
+  { name: 'Shampoo Artero Hidratante', price: 450 },
+  { name: 'Perfume For Pets', price: 320 },
+  { name: 'Correa de Cuero', price: 550 },
+  { name: 'Snacks Naturales', price: 150 },
 ];
 
 // --- HELPER: CREAR USUARIO AUTH ---
 async function getOrCreateAuthUser(email: string, name: string) {
-    // 1. Intentar crear usuario
     const { data, error } = await supabase.auth.admin.createUser({
         email,
         password: 'password123',
@@ -69,7 +69,6 @@ async function getOrCreateAuthUser(email: string, name: string) {
 
     if (data.user) return data.user.id;
 
-    // 2. Si ya existe, buscarlo (Workaround)
     if (error?.message?.includes('already registered') || error?.status === 422) {
         const { data: users } = await supabase.auth.admin.listUsers();
         const existing = users.users.find(u => u.email === email);
@@ -77,18 +76,18 @@ async function getOrCreateAuthUser(email: string, name: string) {
     }
     
     console.error(`⚠️ Error auth para ${email}:`, error?.message);
-    return null; // Si falla auth, devolvemos null y el script intentará insertar sin user_id (lo cual está permitido en tu schema)
+    return null;
 }
 
 // --- FUNCIÓN PRINCIPAL ---
 
 async function seed() {
-  console.log('🌱 Iniciando Restauración Total del Sistema Demo...');
+  console.log('🌱 Iniciando Restauración Premium del Sistema Demo...');
 
   // -------------------------------------------------------------
   // 0. LIMPIEZA DE BASE DE DATOS
   // -------------------------------------------------------------
-  console.log('🧹 Eliminando datos antiguos...');
+  console.log('🧹 Limpiando datos antiguos...');
   
   await supabase.from('payroll_receipts').delete().neq('id', 0);
   await supabase.from('appointment_services').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -102,37 +101,47 @@ async function seed() {
   await supabase.from('pets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
   await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
   await supabase.from('employees').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await supabase.from('services').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Limpiamos servicios viejos
   await supabase.from('commission_tiers').delete().neq('id', 0);
   await supabase.from('official_holidays').delete().neq('id', '00000000-0000-0000-0000-000000000000');
   
-  console.log('✨ Tablas públicas limpias.');
+  console.log('✨ Base de datos limpia.');
 
   // -------------------------------------------------------------
-  // 1. CONFIGURACIÓN BASE
+  // 1. CONFIGURACIÓN Y CATÁLOGOS
   // -------------------------------------------------------------
   await supabase.from('commission_tiers').insert(COMMISSION_TIERS);
+  
+  // Insertar Servicios Premium
+  for (const svc of SERVICES) {
+      await supabase.from('services').insert({
+          name: svc.name,
+          base_price: svc.price,
+          duration_minutes: svc.duration,
+          category: svc.category,
+          active: true
+      });
+  }
+  
+  // Días festivos 2026
   await supabase.from('official_holidays').insert([
       { date: '2026-01-01', name: 'Año Nuevo' },
       { date: '2026-02-05', name: 'Día de la Constitución' },
       { date: '2026-05-01', name: 'Día del Trabajo' },
       { date: '2026-09-16', name: 'Día de la Independencia' },
-      { date: '2026-11-16', name: 'Revolución Mexicana' },
       { date: '2026-12-25', name: 'Navidad' }
   ]);
 
   // -------------------------------------------------------------
-  // 2. CREAR STAFF (AUTH + DB)
+  // 2. CREAR STAFF (EQUIPO SPA)
   // -------------------------------------------------------------
   const empIds: { id: string; role: string; first_name: string }[] = [];
   
-  console.log('👷 Creando empleados...');
+  console.log('👷 Configurando equipo de trabajo...');
   for (const emp of EMPLOYEES) {
     const email = `${emp.first_name.toLowerCase()}@demo.com`;
-    
-    // A. Crear Auth User
     const authId = await getOrCreateAuthUser(email, emp.first_name);
     
-    // B. Insertar en tabla pública (CORREGIDO: Sin campo 'phone' que no existe)
     const payload: any = {
       first_name: emp.first_name,
       last_name: emp.last_name,
@@ -153,14 +162,14 @@ async function seed() {
         .single();
     
     if (error) {
-        console.error(`❌ Error insertando perfil para ${emp.first_name}:`, error.message);
+        console.error(`❌ Error perfil ${emp.first_name}:`, error.message);
         continue;
     }
 
     if (newEmp) {
         empIds.push(newEmp);
         
-        // C. Contrato
+        // Contrato para Nómina
         await supabase.from('employee_contracts').insert({
             employee_id: newEmp.id,
             base_salary_weekly: emp.salary,
@@ -169,18 +178,17 @@ async function seed() {
             metadata: { bank_dispersion: emp.salary, cash_difference: 0 }
         });
 
-        // D. Horario
+        // Horario (Lun-Sáb)
         const schedule = [1, 2, 3, 4, 5, 6].map(day => ({
             employee_id: newEmp.id,
             day_of_week: day,
             start_time: '09:00',
-            end_time: '18:00',
+            end_time: '19:00', // Jornada Spa
             is_working: true
         }));
         await supabase.from('employee_schedules').insert(schedule);
     }
   }
-  console.log(`✅ ${empIds.length} empleados configurados.`);
 
   // -------------------------------------------------------------
   // 3. GENERAR CLIENTES Y MASCOTAS
@@ -189,20 +197,13 @@ async function seed() {
   
   for (let i = 0; i < 40; i++) { 
     const isVip = Math.random() > 0.8;
-    
-    // CORREGIDO: Sin campo 'address' y 'internal_tags' como string
-    const { data: client, error: clientError } = await supabase.from('clients').insert({
+    const { data: client } = await supabase.from('clients').insert({
       full_name: `Cliente Demo ${i+1}`,
       phone: `55${Math.floor(10000000 + Math.random() * 90000000)}`, 
       email: `cliente${i}@demo.com`,
-      internal_tags: isVip ? 'vip, frequent' : 'regular', // Convertido a string simple
+      internal_tags: isVip ? 'vip, frequent' : 'regular',
       status: 'active'
     }).select('id').single();
-
-    if (clientError) {
-        console.error(`❌ Error creando cliente ${i}:`, clientError.message);
-        continue;
-    }
 
     if (client) {
         const numPets = Math.random() > 0.85 ? 2 : 1;
@@ -210,7 +211,7 @@ async function seed() {
             const breed = BREEDS[Math.floor(Math.random() * BREEDS.length)];
             const { data: pet } = await supabase.from('pets').insert({
                 client_id: client.id,
-                name: `Firulais ${i}-${p+1}`,
+                name: `Perrito ${i}-${p+1}`,
                 breed: breed,
                 size: ['small', 'medium', 'large'][Math.floor(Math.random() * 3)],
                 status: 'active',
@@ -221,72 +222,86 @@ async function seed() {
         }
     }
   }
-  console.log(`✅ Clientes y mascotas listos. Total mascotas: ${petIds.length}`);
+  console.log(`✅ ${petIds.length} mascotas premium registradas.`);
 
   // -------------------------------------------------------------
-  // 4. SIMULACIÓN OPERATIVA (Citas + Ventas)
+  // 4. GENERACIÓN DE CITAS Y VENTAS (-1 Mes a +1 Mes)
   // -------------------------------------------------------------
   const today = new Date();
   let totalAppointments = 0;
   
+  // Obtenemos los servicios reales con sus IDs
+  const { data: dbServices } = await supabase.from('services').select('*');
+  if (!dbServices || dbServices.length === 0) throw new Error("No se crearon los servicios");
+
   if (petIds.length > 0 && empIds.length > 0) {
-      for (let i = -45; i < 15; i++) { 
+      
+      // RANGO: -30 días a +30 días
+      for (let i = -30; i <= 30; i++) { 
         const day = new Date(today);
         day.setDate(today.getDate() + i);
         
+        // Abrimos de Lunes a Sábado
         if (day.getDay() === 0) continue;
 
-        const dailyCount = Math.floor(Math.random() * 5) + 3;
+        // Fluctuación de Citas: Sábados (6) más llenos, entre semana variable
+        const isSaturday = day.getDay() === 6;
+        const dailyCount = isSaturday 
+            ? Math.floor(Math.random() * 4) + 6  // 6 a 9 citas
+            : Math.floor(Math.random() * 4) + 3; // 3 a 6 citas
 
         for (let j = 0; j < dailyCount; j++) { 
             const stylists = empIds.filter(e => e.role !== 'reception');
             if (stylists.length === 0) break;
             
             const emp = stylists[Math.floor(Math.random() * stylists.length)];
-            const service = SERVICES[Math.floor(Math.random() * SERVICES.length)];
+            const service = dbServices[Math.floor(Math.random() * dbServices.length)];
             const selectedPet = petIds[Math.floor(Math.random() * petIds.length)];
 
-            const hour = 9 + Math.floor(Math.random() * 8); 
+            // Horario aleatorio 9am - 6pm (evitando overlap perfecto)
+            const hour = 9 + Math.floor(Math.random() * 9); 
             day.setHours(hour, 0, 0, 0); 
             const startTime = new Date(day);
-            const endTime = addMinutes(startTime, service.duration);
+            const endTime = addMinutes(startTime, service.duration_minutes);
 
             const isPast = i < 0;
             const status = isPast ? 'completed' : 'confirmed';
             
             // Crear Cita
-            const { data: appt, error: apptError } = await supabase.from('appointments').insert({
+            const { data: appt } = await supabase.from('appointments').insert({
                 date: startTime.toISOString(),
                 client_id: selectedPet.client_id,
                 pet_id: selectedPet.id,
                 status: status,
-                price_charged: service.price,
-                notes: `Servicio Demo: ${service.name}`
+                price_charged: service.base_price,
+                notes: isPast ? `Servicio Realizado: ${service.name}` : `Agendado: ${service.name}`
             }).select('id').single();
-
-            if (apptError) continue;
 
             if (appt) {
                 totalAppointments++;
 
+                // Detalle del Servicio
                 await supabase.from('appointment_services').insert({
                     appointment_id: appt.id,
+                    service_id: service.id,
                     service_name: service.name,
-                    price: service.price,
+                    price: service.base_price,
                     employee_id: emp.id,
                     start_time: startTime.toISOString(),
                     end_time: endTime.toISOString()
                 });
 
+                // SI YA PASÓ -> GENERAR VENTA ($$$) PARA EL POOL
                 if (isPast) {
                     const boughtStoreItem = Math.random() > 0.7; 
-                    let finalTotal = service.price;
+                    let finalTotal = Number(service.base_price);
+                    
                     const items = [{
                         name: service.name,
                         quantity: 1,
-                        unit_price: service.price,
-                        amount: service.price,
-                        category: 'grooming'
+                        unit_price: service.base_price,
+                        amount: service.base_price,
+                        category: 'grooming' // CLAVE: Esto alimenta el Pool de Grooming
                     }];
 
                     if (boughtStoreItem) {
@@ -308,7 +323,7 @@ async function seed() {
                         timestamp: startTime.toISOString(),
                         total_amount: finalTotal,
                         tax_amount: finalTotal * 0.16,
-                        is_grooming: true,
+                        is_grooming: true, // CLAVE: Marca la transacción como elegible para pool
                         is_store: boughtStoreItem,
                         items: items
                     });
@@ -316,42 +331,28 @@ async function seed() {
             }
         }
       }
-  } else {
-      console.warn("⚠️ No se generaron citas porque faltan empleados o mascotas.");
   }
 
   // -------------------------------------------------------------
-  // 5. INCIDENTES DE NÓMINA
+  // 5. INCIDENTES DE NÓMINA (Para demostrar deducciones)
   // -------------------------------------------------------------
-  console.log('📉 Generando incidentes de asistencia...');
+  console.log('📉 Generando incidentes...');
   if (empIds.length > 0) {
       const randomEmp = empIds[0]; 
-      const absentDate = subDays(new Date(), 2); 
+      const absentDate = subDays(new Date(), 3); // Hace 3 días
       
-      // Falta Injustificada
+      // Falta Injustificada (Afecta Pool y Salario)
       await supabase.from('employee_absences').insert({
           employee_id: randomEmp.id,
           type: 'unjustified',
           start_date: absentDate.toISOString(),
           end_date: absentDate.toISOString(),
-          reason: 'No avisó'
+          reason: 'Falta injustificada (Demo)'
       });
-
-      if (empIds.length > 1) {
-          const sickEmp = empIds[1];
-          const sickDate = subDays(new Date(), 5);
-          await supabase.from('employee_absences').insert({
-              employee_id: sickEmp.id,
-              type: 'sick',
-              start_date: sickDate.toISOString(),
-              end_date: sickDate.toISOString(),
-              reason: 'Gripe'
-          });
-      }
   }
 
-  console.log(`✅ ${totalAppointments} citas generadas.`);
-  console.log('🚀 ¡ENTORNO DEMO 100% OPERATIVO! 🚀');
+  console.log(`✅ ${totalAppointments} citas agendadas (Pasadas y Futuras).`);
+  console.log('🚀 ¡DEMO PREMIUM LISTO!');
 }
 
 seed().catch((e) => {
